@@ -27,7 +27,7 @@ export const updateUserRoles = async (userId: string, roles: string[]) => {
 
 export const getUserActivity = async (userId: string, page = 1, limit = 10) => {
   const { data } = await api.get<PaginatedResponse<ActivityLog>>(
-    `/activity-log?actorId=${userId}&page=${page}&limit=${limit}`
+    `/activity-log/?actorId=${userId}&page=${page}&limit=${limit}`
   );
   return data;
 };

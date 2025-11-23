@@ -2,7 +2,7 @@
 const nextConfig = {
   async rewrites() {
 
-    const backendUrl = (process.env.BACKEND_URL || "https://api.helpingbots.in").replace(/\/$/, "");
+    const backendUrl = (process.env.BACKEND_URL || "http://localhost:8000").replace(/\/$/, "");
 
     console.log(` Proxying /api requests to: ${backendUrl}`);
 

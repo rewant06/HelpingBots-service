@@ -1,5 +1,4 @@
-// Inject the accessToken into every request.
-//Catch 401 errors, refresh the token, and retry the original request.
+
 
 import axios, { isAxiosError } from "axios";
 import { useAuthStore } from "@/store/auth.store";

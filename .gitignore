@@ -68,3 +68,8 @@ docker-compose.test.yml
 Notes.md
 prod-key-helpingbots.pem
 infrastructure/nginx/certs/*
+REQUIREMENT.md
+.env.test
+DATABASE.md
+certs-test
+TEST.md

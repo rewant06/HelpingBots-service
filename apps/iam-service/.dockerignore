@@ -36,6 +36,3 @@ Secret key files
 .pnpm-store
 prod-key-helpingbots.pem
 REQUIREMENT.md
-DATABASE.md
-certs-test
-TEST.md

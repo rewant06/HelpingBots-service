@@ -16,6 +16,7 @@ services:
   # 2. Database (Self-Hosted)
   postgres:
     image: postgres:15-alpine
+    env_file: .env.production
     environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
