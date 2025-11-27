@@ -11,6 +11,8 @@ import { HttpContextInterceptor } from './activity-log/http-context.interceptor'
 import { MailModule } from './mail/mail.module';
 import { QueuesModule } from './queues/queues.module';
 import { ConfigModule } from '@nestjs/config';
+import { ApiKeysModule } from './api-keys/api-keys.module';
+import { PasswordWorkerModule } from './password-worker/password-worker.module';
 
 @Module({
   imports: [
@@ -22,6 +24,8 @@ import { ConfigModule } from '@nestjs/config';
     ActivityLogModule,
     MailModule,
     QueuesModule,
+    ApiKeysModule,
+    PasswordWorkerModule,
   ],
   controllers: [AppController],
   providers: [

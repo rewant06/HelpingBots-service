@@ -9,7 +9,6 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/iam-client';
-import argon2 from 'argon2';
 import { CreateLocalUserDto } from './dto/createUser.dto';
 import { RbacService } from 'src/auth/rbac/rbac.service';
 import { UpdateSelfDto } from './dto/update-self.dto';
@@ -17,12 +16,16 @@ import { AdminUpdateUserDto } from './dto/admin-update.dto';
 import { PaginationDto } from 'src/common/dto/pagination.dto';
 import { UserPayload } from 'src/auth/types/user-payload.type';
 import { PaginatedResponse } from 'src/common/types/response.type';
+import { RedisService } from 'src/redis/redis.service';
+import { PasswordWorkerService } from 'src/password-worker/password-worker.service';
+import * as argon2 from 'argon2';
 
 export const USER_SELECT_FIELDS = {
   id: true,
   name: true,
   email: true,
   isEmailVerified: true,
+  status: true,
   createdAt: true,
   updatedAt: true,
   roles: {
@@ -31,6 +34,7 @@ export const USER_SELECT_FIELDS = {
     },
   },
 } satisfies Prisma.UserSelect;
+const PROFILE_CACHE_TTL = 3600;
 
 @Injectable()
 export class UsersService {
@@ -55,19 +59,32 @@ export class UsersService {
     private prisma: PrismaService,
     //(using forwardRef to avoid circular dependency)
     @Inject(forwardRef(() => RbacService)) private rbacService: RbacService,
+    private redisService: RedisService,
+    private passwordWorker: PasswordWorkerService,
   ) {}
 
   // Hashing password with argon2 ---------------------------
 
-  hashPassword(password: string) {
-    return argon2.hash(password, UsersService.ARGON2_OPTIONS);
+  async hashPassword(password: string) {
+    return this.passwordWorker.hash(password);
+  }
+
+  private getProfileCacheKey(userId: string) {
+    return `user:profile:${userId}`;
+  }
+
+  private async clearUserCache(userId: string) {
+    await Promise.all([
+      this.redisService.del(this.getProfileCacheKey(userId)),
+      this.rbacService.clearCacheForUser(userId),
+    ]);
   }
 
   async verifyAndMaybeRehash(userId: string, password: string, hash: string) {
-    const ok = await argon2.verify(hash, password);
+    const ok = await this.passwordWorker.verify(hash, password);
     if (ok && argon2.needsRehash(hash, UsersService.ARGON2_OPTIONS)) {
       try {
-        const newHash = await this.hashPassword(password);
+        const newHash = await this.passwordWorker.hash(password);
         await this.prisma.user.update({
           where: { id: userId },
           data: { hashedPassword: newHash },
@@ -89,7 +106,7 @@ export class UsersService {
     const hashPassword = await this.hashPassword(dto.password);
 
     try {
-      const newUser = await this.prisma.$transaction(
+      return await this.prisma.$transaction(
         async (tx) => {
           const userRole = await tx.role.findUnique({
             where: { name: 'USER' },
@@ -101,7 +118,7 @@ export class UsersService {
           }
 
           // const hashPassword = await this.hashPassword(dto.password);
-          const newUser = await tx.user.create({
+          return tx.user.create({
             data: {
               name: finalName,
               email: finalEmail,
@@ -113,12 +130,9 @@ export class UsersService {
 
             select: USER_SELECT_FIELDS,
           });
-          return newUser;
         },
         { timeout: 5000 },
       );
-
-      return newUser;
     } catch (err) {
       // Prisma unique violation on concurrent creates -> P2002
       if (
@@ -137,8 +151,6 @@ export class UsersService {
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 20;
     const skip = (page - 1) * limit;
-
-    this.logger.log(`Fetching all users: Page ${page}, Limit ${limit}`);
 
     try {
       const [users, total] = await this.prisma.$transaction([
@@ -197,26 +209,13 @@ export class UsersService {
         },
         select: USER_SELECT_FIELDS,
       });
-      await this.rbacService.clearCacheForUser(userId);
+      await this.clearUserCache(userId);
       this.logger.log(
         `Successfully updated profile and cleared cache for user: ${userId}`,
       );
       return user;
     } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError) {
-        // "Record to update not found"
-        if (err.code === 'P2025') {
-          this.logger.warn(`User not found for update: ${userId}`, err.stack);
-          // Throw a 404, which is what the client should see.
-          throw new NotFoundException('User not found');
-        }
-      }
-
-      // For all other database or application errors
-      this.logger.error(
-        `Failed to update profile for user: ${userId}`,
-        err.stack,
-      );
+      this.handlePrismaError(err, userId);
       throw new InternalServerErrorException('Profile update failed.');
     }
   }
@@ -258,23 +257,14 @@ export class UsersService {
         });
         return user;
       });
-      // CRITICAL: Clear the cache for the user who was just modified
-      await this.rbacService.clearCacheForUser(userId);
+      await this.clearUserCache(userId);
       this.logger.log(
         `Admin successfully updated user: ${userId}. Cache cleared.`,
       );
       return updatedUser;
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        if (error.code === 'P2025') {
-          this.logger.warn(
-            `Admin update failed: User not found: ${userId}`,
-            error.stack,
-          );
-        }
-
-        throw new NotFoundException('User not found');
-      }
+      this.handlePrismaError(error, userId);
+      throw error;
     }
   }
 
@@ -286,28 +276,24 @@ export class UsersService {
         where: { id: userId },
       });
 
-      await this.rbacService.clearCacheForUser(userId);
+      await this.clearUserCache(userId);
       this.logger.log(
         `Admin successfully deleted user: ${userId}. Cache cleared`,
       );
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        if (error.code === 'P2025') {
-          // Record to delete not found
-          this.logger.warn(
-            `Admin delete failed: User not found: ${userId}`,
-            error.stack,
-          );
-          throw new NotFoundException('User not found');
-        }
-      }
-      this.logger.error(`Admin delete failed for user: ${userId}`, error.stack);
+      this.handlePrismaError(error, userId);
       throw new InternalServerErrorException('User deletion failed.');
     }
   }
 
   async getUserById(userId: string) {
-    this.logger.log(`Fetching user details for ID: ${userId}`);
+    const cacheKey = this.getProfileCacheKey(userId);
+    try {
+      const cached = await this.redisService.getJson(cacheKey);
+      if (cached) return cached;
+    } catch (err) {
+      this.logger.log(`Redis error for : ${userId}`, err);
+    }
 
     try {
       const user = await this.prisma.user.findUnique({
@@ -319,7 +305,7 @@ export class UsersService {
         this.logger.warn(`User not found: ${userId}`);
         throw new NotFoundException(`User with ID ${userId} not found`);
       }
-
+      await this.redisService.setJson(cacheKey, user, PROFILE_CACHE_TTL);
       return user;
     } catch (error) {
       if (error instanceof NotFoundException) throw error;
@@ -336,7 +322,7 @@ export class UsersService {
         select: { id: true, email: true, isEmailVerified: true },
       });
 
-      await this.rbacService.clearCacheForUser(userId);
+      await this.clearUserCache(userId);
 
       this.logger.log(`Admin ${actorId} manually verified user ${userId}`);
       return user;
@@ -344,5 +330,16 @@ export class UsersService {
       this.logger.error('Verification update failed', error);
       throw new InternalServerErrorException('Failed to manually verify user');
     }
+  }
+
+  private handlePrismaError(err: unknown, userId: string) {
+    if (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === 'P2025'
+    ) {
+      this.logger.warn(`User not found: ${userId}`);
+      throw new NotFoundException('User not found');
+    }
+    this.logger.error(`Operation failed for: ${userId}`, err);
   }
 }

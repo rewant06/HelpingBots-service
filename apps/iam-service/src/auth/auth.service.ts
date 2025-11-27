@@ -10,7 +10,6 @@ import {
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { UsersService } from 'src/users/users.service';
-import * as argon2 from 'argon2';
 import { RedisService } from 'src/redis/redis.service';
 import { ActivityLogService } from 'src/activity-log/activity-log.service';
 import { HttpContextService } from 'src/activity-log/http-context.service';
@@ -26,11 +25,16 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { loadPublicKey } from 'src/common/keys';
 import { CreateLocalUserDto } from './dto/createUser.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
-import { RefreshToken } from '@prisma/iam-client';
+import {
+  RefreshToken,
+  ActivityLogActionType,
+  ActivityLogStatus,
+} from '@prisma/iam-client';
 import type { Request } from 'express';
+import { PasswordWorkerService } from '../password-worker/password-worker.service';
 
 const MAX_ATTEMPTS = 5;
-const LOCKOUT_TIME_SECONDS = 1 * 60 * 60;
+const LOCKOUT_TIME_SECONDS = 3600;
 
 export interface AuthTokens {
   accessToken: string;
@@ -47,9 +51,9 @@ export interface DeviceInfo {
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
   private readonly REFRESH_TOKEN_EXPIRY_DAYS = 30;
-  private readonly REFRESH_TOKEN_HASH_ALGO = 'argon2id';
   private readonly REFRESH_TOKEN_BYTES = 48;
-
+  private readonly DUMMY_HASH =
+    '$argon2id$v=19$m=65536,t=3,p=1$QnUoe8k+GNOWgW/XoA3NRA$s5L1EC88p2F0N0UvAFvPZg/1LhINJz0IuS/aB8LMK+s';
   constructor(
     private usersService: UsersService,
     private redisService: RedisService,
@@ -58,6 +62,7 @@ export class AuthService {
     private prisma: PrismaService,
     private httpContext: HttpContextService,
     private rbacService: RbacService,
+    private passwordWorker: PasswordWorkerService,
     @InjectQueue('email') private emailQueue: Queue,
   ) {}
 
@@ -82,8 +87,8 @@ export class AuthService {
       });
 
       await this.activityLogService.createLog(
-        'EXECUTE',
-        'SUCCESS',
+        ActivityLogActionType.EXECUTE,
+        ActivityLogStatus.SUCCESS,
         'User',
         newUser.id,
         { email: newUser.email, action: 'email-verification-sent' },
@@ -111,11 +116,11 @@ export class AuthService {
       this.logger.warn(`Email verification failed: Invalid or expired token.`);
       const reason = error instanceof Error ? error.message : String(error);
       await this.activityLogService.createLog(
-        'EXECUTE',
-        'FAILED',
+        ActivityLogActionType.EXECUTE,
+        ActivityLogStatus.FAILED,
         'Authentication',
         null,
-        { action: 'email-verify-attmpt' },
+        { action: 'email-verify-attempt' },
         `Invalid or expired token: ${reason}`,
       );
       throw new BadRequestException('Invalid or expired token.');
@@ -127,8 +132,8 @@ export class AuthService {
     if (isDenied) {
       this.logger.warn(`Email verification failed: Token already used: ${jti}`);
       await this.activityLogService.createLog(
-        'EXECUTE',
-        'FAILED',
+        ActivityLogActionType.EXECUTE,
+        ActivityLogStatus.FAILED,
         'User',
         userId,
         { action: 'email-verify-attempt', jti },
@@ -169,8 +174,8 @@ export class AuthService {
       await this.redisService.set(`denylist:jti:${jti}`, '1', ttl);
     }
     await this.activityLogService.createLog(
-      'UPDATE',
-      'SUCCESS',
+      ActivityLogActionType.UPDATE,
+      ActivityLogStatus.SUCCESS,
       'User',
       userId,
       { action: 'email-verify-success' },
@@ -181,16 +186,15 @@ export class AuthService {
     const inputEmail = dto.email.trim().toLowerCase();
     const key = `rl:login:email:${inputEmail}`;
     //check for failed attempts
-
-    const attempts = await this.redisService.client.incr(key);
-
-    if (attempts === 1) {
-      await this.redisService.client.expire(key, LOCKOUT_TIME_SECONDS);
-    }
+    const multi = this.redisService.client.multi();
+    multi.incr(key);
+    multi.expire(key, LOCKOUT_TIME_SECONDS, 'NX'); // NX = Only set expiry if it doesn't exist
+    const results = await multi.exec();
+    const attempts = results ? (results[0][1] as number) : 0;
     if (attempts >= MAX_ATTEMPTS) {
       await this.activityLogService.createLog(
-        'EXECUTE',
-        'FAILED',
+        ActivityLogActionType.EXECUTE,
+        ActivityLogStatus.FAILED,
         'Authentication', // entity Type
         null,
         { email: inputEmail },
@@ -200,7 +204,7 @@ export class AuthService {
         'Account locked due to too many failed attempts. Try again in 1 hour.',
       );
     }
-    // Implement timing locked time of 15 mins
+    // Implement timing locked time of 1Hr
     // here we can use boolean like isLocked and a timestamp: lockedUntil to manage lock state
 
     const user =
@@ -209,18 +213,21 @@ export class AuthService {
     // 1. Get the hash. If user doesn't exist, use a "dummy" hash.
     // This dummy hash should be a real Argon2 hash of a random string.
     // For example, the hash of "dummy-password-for-timing-attack-prevention"
-    const hashToCompare =
-      user?.hashedPassword ??
-      '$argon2id$v=19$m=65536,t=3,p=1$QnUoe8k+GNOWgW/XoA3NRA$s5L1EC88p2F0N0UvAFvPZg/1LhINJz0IuS/aB8LMK+s';
+    const hashToCompare = user?.hashedPassword ?? this.DUMMY_HASH;
+    let isValid = false;
+    try {
+      isValid = await this.passwordWorker.verify(hashToCompare, dto.password);
+    } catch (err) {
+      this.logger.error('Worker thread failed verification', err);
 
-    // 2. Always run the verify function. This is the slow part.
-    const isValid = await argon2.verify(hashToCompare, dto.password);
+      isValid = false;
+    }
 
     if (!user || !user.hashedPassword || !isValid) {
       await this.activityLogService.createLog(
-        'EXECUTE',
-        'FAILED',
-        'Authentication', // entity Type
+        ActivityLogActionType.EXECUTE,
+        ActivityLogStatus.FAILED,
+        'Authentication',
         null,
         { email: inputEmail },
         'Invalid credentials',
@@ -231,9 +238,11 @@ export class AuthService {
     if (!user.isEmailVerified) {
       this.logger.warn(`Login attempt from unverified email: ${user.email}`);
 
+      // Here we can also add to send a verification email if needed
+
       await this.activityLogService.createLog(
-        'EXECUTE',
-        'FAILED',
+        ActivityLogActionType.EXECUTE,
+        ActivityLogStatus.FAILED,
         'Authentication',
         user.id,
         { email: user.email },
@@ -248,10 +257,10 @@ export class AuthService {
     await this.redisService.client.del(key);
 
     await this.activityLogService.createLog(
-      'EXECUTE',
-      'SUCCESS',
-      'Authentication', // entity Type
-      user.id, // entityId
+      ActivityLogActionType.EXECUTE,
+      ActivityLogStatus.SUCCESS,
+      'Authentication',
+      user.id,
       { email: inputEmail },
     );
 
@@ -290,7 +299,7 @@ export class AuthService {
     device?: DeviceInfo,
   ) {
     const rawToken = this.randomToken(this.REFRESH_TOKEN_BYTES);
-    const tokenHash = await argon2.hash(rawToken);
+    const tokenHash = await this.passwordWorker.hash(rawToken);
     const expiresAt = addDays(new Date(), this.REFRESH_TOKEN_EXPIRY_DAYS);
 
     const created = await this.prisma.refreshToken.create({
@@ -322,11 +331,11 @@ export class AuthService {
       const refreshToken = `${created.id}.${rawToken}`;
 
       await this.activityLogService.createLog(
-        'EXECUTE',
-        'SUCCESS',
-        'Token', // entity Type
-        created.id, // entityId
-        { generatedToken: refreshToken },
+        ActivityLogActionType.EXECUTE,
+        ActivityLogStatus.SUCCESS,
+        'Token',
+        created.id,
+        { generatedToken: created.id },
       );
 
       return { accessToken, refreshToken };
@@ -354,31 +363,10 @@ export class AuthService {
     return { tokenId, tokenValue };
   }
 
-  private async acquireLock(key: string, ttlMs = 5000): Promise<boolean> {
-    if (!this.redisService) return true;
-
-    try {
-      return await this.redisService.acquireLock(key, ttlMs);
-    } catch (error) {
-      this.logger.error('Redis lock acquistion failed', error);
-      return false;
-    }
-  }
-
-  private async releaseLock(key: string): Promise<void> {
-    if (!this.redisService) return;
-
-    try {
-      await this.redisService.releaseLock(key);
-    } catch (error) {
-      this.logger.error('Redis lock release failed', error);
-    }
-  }
-
   private async handlePossibleReuse(storedToken: RefreshToken) {
     await this.activityLogService.createLog(
-      'EXECUTE',
-      'FAILED',
+      ActivityLogActionType.EXECUTE,
+      ActivityLogStatus.FAILED,
       'Token',
       storedToken.id,
       { userId: storedToken.userId },
@@ -406,11 +394,10 @@ export class AuthService {
     const { tokenId, tokenValue } = parts;
 
     // Redis
-    const lockKey = `refresh_lock: ${tokenId}`;
-    const lockAcquired = this.redisService
-      ? await this.acquireLock(lockKey, 5000)
-      : true;
-    if (!lockAcquired)
+    const lockKey = `refresh_lock:${tokenId}`;
+    const lockToken = await this.redisService.acquireLock(lockKey, 5000);
+
+    if (!lockToken)
       throw new ConflictException(
         'A session refresh is already in progress. Please try again.',
       );
@@ -437,7 +424,7 @@ export class AuthService {
         throw new UnauthorizedException('Refresh token expired');
       }
 
-      const matches = await argon2
+      const matches = await this.passwordWorker
         .verify(storedToken.tokenHash, tokenValue)
         .catch(() => false);
       if (!matches) {
@@ -446,8 +433,8 @@ export class AuthService {
           data: { revokedAt: new Date(), revoked: true },
         });
         await this.activityLogService.createLog(
-          'EXECUTE',
-          'FAILED',
+          ActivityLogActionType.EXECUTE,
+          ActivityLogStatus.FAILED,
           'Token',
           storedToken.id,
           { userId: storedToken.userId },
@@ -458,11 +445,9 @@ export class AuthService {
           'Invalid refresh token (possible theft)',
         );
       }
-
+      const rawToken = this.randomToken(this.REFRESH_TOKEN_BYTES);
+      const tokenHash = await this.passwordWorker.hash(rawToken);
       const result = await this.prisma.$transaction(async (tx) => {
-        const rawToken = this.randomToken(this.REFRESH_TOKEN_BYTES);
-        const tokenHash = await argon2.hash(rawToken);
-
         const expiresAt = addDays(new Date(), this.REFRESH_TOKEN_EXPIRY_DAYS);
 
         const created = await tx.refreshToken.create({
@@ -506,8 +491,8 @@ export class AuthService {
       const refreshToken = `${result.created.id}.${result.rawToken}`;
 
       await this.activityLogService.createLog(
-        'EXECUTE',
-        'SUCCESS',
+        ActivityLogActionType.EXECUTE,
+        ActivityLogStatus.SUCCESS,
         'Token',
         result.created.id,
         { oldRefresh: storedToken.id, newRefresh: result.created.id },
@@ -515,7 +500,9 @@ export class AuthService {
 
       return { accessToken, refreshToken };
     } finally {
-      if (this.redisService) await this.releaseLock(lockKey);
+      if (this.redisService && lockToken !== 'bypass-token') {
+        await this.redisService.releaseLock(lockKey, lockToken);
+      }
     }
   }
 
@@ -527,8 +514,8 @@ export class AuthService {
     actor: UserPayload,
   ): Promise<void> {
     await this.activityLogService.createLog(
-      'EXECUTE',
-      'SUCCESS',
+      ActivityLogActionType.EXECUTE,
+      ActivityLogStatus.SUCCESS,
       'Authentication',
       actor.id,
       { action: 'logout_initiated' },
@@ -545,8 +532,8 @@ export class AuthService {
         });
 
         await this.activityLogService.createLog(
-          'EXECUTE',
-          'SUCCESS',
+          ActivityLogActionType.EXECUTE,
+          ActivityLogStatus.SUCCESS,
           'Token',
           tokenId,
           { revokedTokenId: tokenId },
@@ -587,8 +574,8 @@ export class AuthService {
     const reason = error instanceof Error ? error.message : String(error);
     this.logger.warn(`User ${actor.email} failed to logout: ${reason}`);
     await this.activityLogService.createLog(
-      'EXECUTE',
-      'FAILED',
+      ActivityLogActionType.EXECUTE,
+      ActivityLogStatus.FAILED,
       'Token',
       null,
       { attemptedToken: token, actorId: actor.id },
@@ -620,13 +607,13 @@ export class AuthService {
     const email = dto.email.trim().toLowerCase();
 
     await this.activityLogService.createLog(
-      'EXECUTE',
-      'SUCCESS',
+      ActivityLogActionType.EXECUTE,
+      ActivityLogStatus.SUCCESS,
       'Authentication',
       null,
       {
         email,
-        action: 'forgot-password-attemp',
+        action: 'forgot-password-attempt',
       },
     );
 
@@ -645,8 +632,8 @@ export class AuthService {
       });
 
       await this.activityLogService.createLog(
-        'EXECUTE',
-        'SUCCESS',
+        ActivityLogActionType.EXECUTE,
+        ActivityLogStatus.SUCCESS,
         'User',
         user.id,
         {
@@ -677,8 +664,8 @@ export class AuthService {
         `Password reset failed: Invalid or expired token provided.`,
       );
       await this.activityLogService.createLog(
-        'EXECUTE',
-        'FAILED',
+        ActivityLogActionType.EXECUTE,
+        ActivityLogStatus.FAILED,
         'Authentication',
         null,
         { action: 'password-reset-attemp' },
@@ -695,8 +682,8 @@ export class AuthService {
     if (isDenied) {
       this.logger.warn(`Password reset failed: Token already used: ${jti}`);
       await this.activityLogService.createLog(
-        'EXECUTE',
-        'FAILED',
+        ActivityLogActionType.EXECUTE,
+        ActivityLogStatus.FAILED,
         'User',
         userId,
         { action: 'password-reset-attempt', jti },
@@ -706,7 +693,7 @@ export class AuthService {
 
     let user: UserPayload;
     try {
-      const hashedPassword = await this.usersService.hashPassword(password);
+      const hashedPassword = await this.passwordWorker.hash(password);
 
       user = await this.prisma.user.update({
         where: { id: userId },
@@ -729,8 +716,8 @@ export class AuthService {
         error.stack,
       );
       await this.activityLogService.createLog(
-        'EXECUTE',
-        'FAILED',
+        ActivityLogActionType.EXECUTE,
+        ActivityLogStatus.FAILED,
         'User',
         userId,
         { action: 'password-reset' },
@@ -747,8 +734,8 @@ export class AuthService {
     }
 
     await this.activityLogService.createLog(
-      'UPDATE',
-      'SUCCESS',
+      ActivityLogActionType.UPDATE,
+      ActivityLogStatus.SUCCESS,
       'User',
       userId,
       { action: 'password-reset-success' },

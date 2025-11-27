@@ -74,6 +74,7 @@ export class ActivityLogService {
     entityId: string | null | undefined,
     changes?: any,
     failureReason?: string,
+    tx?: Prisma.TransactionClient,
   ) {
     try {
       const actor = this.httpContext.getActor();
@@ -86,8 +87,8 @@ export class ActivityLogService {
           userAgent: req.headers?.['user-agent'],
         };
       }
-
-      await this.prisma.activityLog.create({
+      const db = tx || this.prisma;
+      await db.activityLog.create({
         data: {
           actorId: actor?.id === 'system' ? null : actor?.id,
           // Create a "snapshot" of the actor for long-term storage
@@ -105,6 +106,11 @@ export class ActivityLogService {
       });
     } catch (err) {
       this.logger.error('Failed to write to ActivityLog', err.stack);
+      if (tx) {
+        throw new InternalServerErrorException(
+          'Audit Log Failed - Transaction Rolled Back',
+        );
+      }
     }
   }
 }
