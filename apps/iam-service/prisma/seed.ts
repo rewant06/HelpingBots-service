@@ -32,6 +32,24 @@ async function main() {
     update: {},
     create: { action: PermissionAction.UPDATE, subject: 'UserSelf' },
   });
+
+  const permCreateTenant = await prisma.permission.upsert({
+    where: {
+      action_subject: { action: PermissionAction.CREATE, subject: 'Tenant' },
+    },
+    update: {},
+    create: { action: PermissionAction.CREATE, subject: 'Tenant' },
+  });
+
+  // VETERAN ADDITION: Allow users to manage API Keys
+  const permManageApiKey = await prisma.permission.upsert({
+    where: {
+      action_subject: { action: PermissionAction.MANAGE, subject: 'ApiKey' },
+    },
+    update: {},
+    create: { action: PermissionAction.MANAGE, subject: 'ApiKey' },
+  });
+
   console.log('Created permissions.');
 
   // A "read all users" permission
@@ -86,6 +104,15 @@ async function main() {
   });
 
   console.log('Created roles and assigned permissions.');
+
+  await prisma.role.update({
+    where: { name: 'USER' },
+    data: {
+      permissions: {
+        connect: [{ id: permCreateTenant.id }, { id: permManageApiKey.id }],
+      },
+    },
+  });
 
   // --- Optional: Create a Test Admin User ---
   // You can uncomment this to create a test admin

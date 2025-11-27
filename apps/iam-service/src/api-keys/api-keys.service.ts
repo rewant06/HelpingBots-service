@@ -185,7 +185,7 @@ export class ApiKeysService {
       throw new UnauthorizedException('Organization is suspended');
     }
 
-    this.updateLastUsed(keyRecord.id);
+    await this.updateLastUsed(keyRecord.id);
     return {
       tenantId: keyRecord.tenantId,
       keyId: keyRecord.id,

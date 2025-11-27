@@ -13,6 +13,9 @@ import { QueuesModule } from './queues/queues.module';
 import { ConfigModule } from '@nestjs/config';
 import { ApiKeysModule } from './api-keys/api-keys.module';
 import { PasswordWorkerModule } from './password-worker/password-worker.module';
+import { TenantsController } from './tenants/tenants.controller';
+import { TenantsService } from './tenants/tenants.service';
+import { TenantsModule } from './tenants/tenants.module';
 
 @Module({
   imports: [
@@ -26,14 +29,16 @@ import { PasswordWorkerModule } from './password-worker/password-worker.module';
     QueuesModule,
     ApiKeysModule,
     PasswordWorkerModule,
+    TenantsModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController, TenantsController],
   providers: [
     AppService,
     {
       provide: APP_INTERCEPTOR,
       useClass: HttpContextInterceptor,
     },
+    TenantsService,
   ],
 })
 export class AppModule {}
