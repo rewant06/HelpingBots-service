@@ -16,6 +16,7 @@ import {
   SubscriptionTier,
   TenantType,
 } from '@prisma/iam-client';
+import { randomBytes } from 'crypto';
 
 @Injectable()
 export class TenantsService {
@@ -26,15 +27,39 @@ export class TenantsService {
     private activityLogService: ActivityLogService,
   ) {}
 
+  private async ensureUniqueSlug(
+    name: string,
+    requestedSlug?: string,
+  ): Promise<string> {
+    let slug =
+      requestedSlug ||
+      name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)/g, '');
+
+    const exists = await this.prisma.tenant.findUnique({ where: { slug } });
+    if (!exists) return slug;
+
+    if (requestedSlug) {
+      throw new ConflictException(
+        `The Organization ID '${slug}' is already taken.`,
+      );
+    } else {
+      return `${slug}-${randomBytes(2).toString('hex')}`;
+    }
+  }
+
   async createTenant(dto: CreateTenantDto, ownerId: string) {
     this.logger.log(`User [${ownerId}] creating tenant [${dto.slug}]`);
+    const finalSlug = await this.ensureUniqueSlug(dto.name, dto.slug);
 
     try {
       const result = await this.prisma.$transaction(async (tx) => {
         const tenant = await tx.tenant.create({
           data: {
             name: dto.name,
-            slug: dto.slug,
+            slug: finalSlug,
             type: dto.type || TenantType.ORGANIZATION,
             ownerId,
             subscription: {
@@ -56,7 +81,7 @@ export class TenantsService {
           ActivityLogStatus.SUCCESS,
           'Tenant',
           tenant.id,
-          { slug: dto.slug, type: dto.type },
+          { slug: finalSlug, type: dto.type },
           undefined,
           tx,
         );
@@ -85,27 +110,37 @@ export class TenantsService {
   }
 
   async getTenantById(tenantId: string, userId: string) {
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { id: tenantId },
-      include: {
-        subscription: true,
-        apiKeys: {
-          select: {
-            name: true,
-            prefix: true,
-            last4: true,
-            createdAt: true,
-            lastUsedAt: true,
+    try {
+      const tenant = await this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        include: {
+          subscription: true,
+          apiKeys: {
+            select: {
+              id: true,
+              name: true,
+              prefix: true,
+              last4: true,
+              scopes: true,
+              createdAt: true,
+              lastUsedAt: true,
+            },
           },
         },
-      },
-    });
-    if (!tenant) {
-      throw new NotFoundException('Organization not found');
+      });
+      if (!tenant) {
+        throw new NotFoundException('Organization not found');
+      }
+      if (tenant.ownerId !== userId) {
+        throw new NotFoundException('Organization not found');
+      }
+      return tenant;
+    } catch (err) {
+      if (Error instanceof NotFoundException) throw Error;
+      this.logger.error(`Get Tenant Failed: ${err.message}`);
+      throw new InternalServerErrorException(
+        'Could not fetch Organization details',
+      );
     }
-    if (tenant.ownerId !== userId) {
-      throw new NotFoundException('Organization not found');
-    }
-    return tenant;
   }
 }
