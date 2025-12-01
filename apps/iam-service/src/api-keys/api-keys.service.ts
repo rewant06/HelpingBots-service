@@ -123,17 +123,19 @@ export class ApiKeysService {
   }
 
   async validateKey(rawKey: string): Promise<ValidatedKeyContext> {
-    if (!rawKey || !rawKey.startsWith(this.KEY_PREFIX)) {
+    const fullPrefix = `${this.KEY_PREFIX}${this.KEY_SEPARATOR}`;
+    if (!rawKey || !rawKey.startsWith(fullPrefix)) {
       throw new UnauthorizedException('Invalid API Key');
     }
 
-    const parts = rawKey.split(this.KEY_SEPARATOR);
+    const keyBody = rawKey.slice(fullPrefix.length);
+    const parts = keyBody.split(this.KEY_SEPARATOR);
 
-    if (parts.length !== 3) {
+    if (parts.length !== 2) {
       throw new UnauthorizedException('Invalid API Key format');
     }
 
-    const [, uuidPart] = parts;
+    const [uuidPart, secretPart] = parts;
 
     let keyRecord;
     try {

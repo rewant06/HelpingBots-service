@@ -8,18 +8,129 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Post {
-  id        String   @id @default(uuid())
-  content   String   @db.Text
+model AnonymousProfile {
+  id           String @id @default(uuid())
+  tenantId     String
+  shadowUserId String // The ID from IAM/Client
+
+  pseudonym String // "Quiet Panda"
+  avatarUrl String? // Auto-generated avatar
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // The true identity (for ownership/moderation)
-  userId String
+  // Constraint 1: One profile per user per tenant
+  @@unique([tenantId, shadowUserId])
+  // Constraint 2: Name must be unique inside the tenant
+  @@unique([tenantId, pseudonym])
+}
 
-  // The persona fields
+// E.g. "Public", "Engineering", "Whistleblower"
+model Space {
+  id          String  @id @default(uuid())
+  slug        String
+  name        String
+  description String?
+  isPrivate   Boolean @default(false)
+
+  tenantId  String
+  createdAt DateTime @default(now())
+
+  posts Post[]
+
+  @@unique([tenantId, slug])
+}
+
+model Post {
+  id       String  @id @default(uuid())
+  isGlobal Boolean @default(false)
+
+  tenantId     String
+  shadowUserId String
+
+  title    String?
+  content  String  @db.Text
+  isEdited Boolean @default(false)
+
   isAnonymous       Boolean @default(true)
   authorDisplayName String?
 
-  @@index([userId])
+  spaceId String?
+  space   Space?  @relation(fields: [spaceId], references: [id])
+
+  // Engagement Counters (Denormalized)
+  viewCount     Int @default(0)
+  reactionCount Int @default(0)
+  commentCount  Int @default(0)
+
+  // Features
+  isPoll      Boolean      @default(false)
+  pollOptions PollOption[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  comments  Comment[]
+  reactions Reaction[]
+
+  @@unique([createdAt, id])
+  @@index([tenantId, createdAt])
+  @@index([isGlobal, createdAt])
+  @@index([tenantId, shadowUserId])
+}
+
+model PollOption {
+  id        String @id @default(uuid())
+  text      String
+  voteCount Int    @default(0)
+
+  postId String
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  votes PollVote[]
+}
+
+model PollVote {
+  id           String @id @default(uuid())
+  tenantId     String
+  shadowUserId String
+
+  pollOptionId String
+  pollOption   PollOption @relation(fields: [pollOptionId], references: [id], onDelete: Cascade)
+
+  @@unique([pollOptionId, shadowUserId])
+}
+
+// --- 4. COMMENTS ---
+model Comment {
+  id      String @id @default(uuid())
+  content String @db.Text
+
+  tenantId          String
+  shadowUserId      String
+  authorDisplayName String
+
+  postId String
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([postId])
+  @@index([tenantId])
+}
+
+// --- 5. REACTIONS ---
+model Reaction {
+  id   String @id @default(uuid())
+  type String // "LIKE", "FUNNY", "INSIGHTFUL"
+
+  tenantId     String
+  shadowUserId String
+
+  postId String
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, shadowUserId, type])
+  @@index([tenantId])
 }
