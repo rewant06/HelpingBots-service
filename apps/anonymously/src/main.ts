@@ -6,6 +6,12 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  app.enableCors({
+    origin: ['http://localhost:3000', 'https://helpingbots.in'], // Whitelist Frontend
+    credentials: true,
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    allowedHeaders: 'Content-Type, Accept, Authorization, x-api-key, x-user-id', // Allow custom headers
+  });
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true, // Automatically strip properties not in the DTO

@@ -16,7 +16,6 @@ import {
   ApiOperation,
   ApiResponse,
   ApiHeader,
-  ApiBearerAuth,
   ApiParam,
 } from '@nestjs/swagger';
 import { PostsService } from './posts.service';
@@ -25,6 +24,9 @@ import { UpdatePostDto } from './dto/update-post.dto';
 import { ApiKeyGuard, TenantContext } from '../common/guards/api-key.guard';
 import { Tenant, ShadowUser } from '../common/decorators/tenant.decorator';
 import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
+import { OptionalUser } from '../common/decorators/optional-auth.decorator';
+import { Public } from 'src/common/decorators/public.decorator';
+import { CreateCommentDto } from './dto/create-comment.dto';
 
 @ApiTags('Posts')
 @ApiHeader({
@@ -43,11 +45,13 @@ export class PostsController {
   constructor(private readonly postsService: PostsService) {}
 
   // --- 1. GET GLOBAL FEED (Public/B2C) ---
+
   @Get('global')
+  @OptionalUser()
+  @Public()
   @ApiOperation({ summary: 'Get the Global Public Feed (HelpingBots)' })
   @ApiResponse({ status: 200, description: 'Returns global posts.' })
   findAllGlobal(@Query() dto: PaginationQueryDto) {
-    // Note: Still requires a valid API Key (e.g. the Public Client's key) for rate limiting
     return this.postsService.findAllGlobal(dto);
   }
   // --- 2. GET TENANT FEED (Private) ---
@@ -95,7 +99,28 @@ export class PostsController {
     );
   }
 
-  // --- 5. UPDATE POST ---
+  // --- 5. REACT (Agree / Disagree) ---
+  @Post(':id/react')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'React to a post (AGREE / DISAGREE)' })
+  @ApiParam({ name: 'id', description: 'The UUID of the Post' })
+  react(
+    @Param('id') postId: string,
+    @Body('type') type: 'AGREE' | 'DISAGREE',
+    @Tenant() tenant: TenantContext,
+    @ShadowUser() user: { shadowId: string },
+  ) {
+    // Default to AGREE if type is missing (though DTO should enforce it)
+    const reactionType = type || 'AGREE';
+    return this.postsService.react(
+      tenant.tenantId,
+      user.shadowId,
+      postId,
+      reactionType,
+    );
+  }
+
+  // --- 6. UPDATE POST ---
   @Patch(':id')
   @ApiOperation({ summary: 'Edit a Post (Author Only)' })
   update(
@@ -112,7 +137,7 @@ export class PostsController {
     );
   }
 
-  // --- 6. ARCHIVE POST ---
+  // --- 7. ARCHIVE POST ---
   @Delete(':id')
   @ApiOperation({ summary: 'Archive/Delete a Post (Author or Admin)' })
   archive(
@@ -120,8 +145,6 @@ export class PostsController {
     @Tenant() tenant: TenantContext,
     @ShadowUser() user: { shadowId: string },
   ) {
-    // VETERAN TODO: Check x-user-role header or scopes to set 'isPrivileged' to true for Admins.
-    // For now, defaulting to false (Author only).
     const isPrivileged = false;
     return this.postsService.archive(
       tenant.tenantId,
@@ -129,5 +152,51 @@ export class PostsController {
       postId,
       isPrivileged,
     );
+  }
+
+  // --- 8. GET MY PROFILE ---
+  @Get('me/profile')
+  @ApiOperation({ summary: 'Get current anonymous identity' })
+  getMyProfile(
+    @Tenant() tenant: TenantContext,
+    @ShadowUser() user: { shadowId: string },
+  ) {
+    return this.postsService.getMyProfile(tenant.tenantId, user.shadowId);
+  }
+
+  // --- 7. CREATE COMMENT ---
+  @Post(':id/comments')
+  @ApiOperation({ summary: 'Add a comment to a post' })
+  async createComment(
+    @Param('id') postId: string,
+    @Body() dto: CreateCommentDto, // You need to create this DTO
+    @Tenant() tenant: TenantContext,
+    @ShadowUser() user: { shadowId: string },
+  ) {
+    return this.postsService.createComment(
+      tenant.tenantId,
+      user.shadowId,
+      postId,
+      dto.content,
+      dto.isAnonymous, // Pass preference
+    );
+  }
+
+  // --- 8. GET COMMENTS ---
+  @Get(':id/comments')
+  @ApiOperation({ summary: 'Get comments for a post' })
+  async getComments(
+    @Param('id') postId: string,
+    @Query() dto: PaginationQueryDto,
+  ) {
+    return this.postsService.getComments(postId, dto);
+  }
+
+  @Get(':id')
+  @OptionalUser()
+  @Public()
+  @ApiOperation({ summary: 'Get a single post by ID' })
+  async findOne(@Param('id') postId: string, @Tenant() tenant: TenantContext) {
+    return this.postsService.findOne(tenant.tenantId, postId);
   }
 }

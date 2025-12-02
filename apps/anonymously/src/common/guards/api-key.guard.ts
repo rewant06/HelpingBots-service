@@ -7,11 +7,14 @@ import {
   Inject,
   InternalServerErrorException,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { Request } from 'express';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
+import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import { IS_USER_OPTIONAL_KEY } from '../decorators/optional-auth.decorator';
 
 // Strict Type for the Context we receive from IAM
 export class TenantContext {
@@ -34,12 +37,19 @@ export class ApiKeyGuard implements CanActivate {
   constructor(
     private readonly httpService: HttpService,
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
+    private reflector: Reflector,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
-
     // 1. Extract Headers (Case insensitive usually, but strict here)
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (isPublic) {
+      return true;
+    }
+    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const apiKey = request.headers['x-api-key'] as string;
     const userId = request.headers['x-user-id'] as string;
 
@@ -53,7 +63,6 @@ export class ApiKeyGuard implements CanActivate {
     }
 
     try {
-      // 2. Cache Strategy (Read-Through)
       // We verify keys remotely. To prevent latency on every request, we cache valid keys.
       const cacheKey = `auth:apikey:${apiKey}`;
       const cachedContext =
@@ -79,7 +88,12 @@ export class ApiKeyGuard implements CanActivate {
 
       // 5. Attach Context
       request.tenant = data;
-      request.user = { shadowId: userId };
+      if (userId) {
+        request.user = { shadowId: userId };
+      } else {
+        // Public Visitor
+        request.user = { shadowId: 'public-visitor' };
+      }
 
       return true;
     } catch (error) {

@@ -61,14 +61,16 @@ model Post {
   // Engagement Counters (Denormalized)
   viewCount     Int @default(0)
   reactionCount Int @default(0)
+  agreeCount    Int @default(0)
+  disagreeCount Int @default(0)
   commentCount  Int @default(0)
 
   // Features
   isPoll      Boolean      @default(false)
   pollOptions PollOption[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
   comments  Comment[]
@@ -121,9 +123,15 @@ model Comment {
 }
 
 // --- 5. REACTIONS ---
+
+enum ReactionType {
+  AGREE
+  DISAGREE
+}
+
 model Reaction {
   id   String @id @default(uuid())
-  type String // "LIKE", "FUNNY", "INSIGHTFUL"
+  type ReactionType
 
   tenantId     String
   shadowUserId String
@@ -131,6 +139,6 @@ model Reaction {
   postId String
   post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
 
-  @@unique([postId, shadowUserId, type])
+  @@unique([postId, shadowUserId])
   @@index([tenantId])
 }

@@ -6,6 +6,7 @@ import {
   BadRequestException,
   ConflictException,
   Inject,
+  UnauthorizedException,
 } from '@nestjs/common';
 
 import { PrismaService } from 'src/prisma/prisma.service';
@@ -15,7 +16,7 @@ import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 import { RedisService } from 'src/redis/redis.service';
-import { Prisma } from '@prisma/posting-client';
+import { Prisma, ReactionType } from '@prisma/posting-client';
 import { UpdatePostDto } from './dto/update-post.dto';
 import { AvatarService } from 'src/common/services/avatar.service';
 
@@ -85,6 +86,9 @@ export class PostsService {
   }
 
   async create(dto: CreatePostDto, tenantId: string, shadowUserId: string) {
+    if (shadowUserId === 'public-visitor') {
+      throw new UnauthorizedException('Login required to post.');
+    }
     this.moderationService.enforcePolicy(dto.content);
 
     if (dto.spaceId) {
@@ -126,6 +130,8 @@ export class PostsService {
           authorDisplayName: true,
           createdAt: true,
           viewCount: true,
+          agreeCount: true,
+          disagreeCount: true,
           reactionCount: true,
           commentCount: true,
           isGlobal: true,
@@ -133,13 +139,9 @@ export class PostsService {
           pollOptions: true,
         },
       });
-      const cacheKey = `feed:${tenantId}:recent`;
-      await this.cacheManager.del(cacheKey);
+      await this.cacheManager.del(`feed:${tenantId}:recent`);
+      if (isGlobal) await this.cacheManager.del(`feed:global:recent`);
 
-      if (isGlobal) {
-        const globalCacheKey = `feed:global:recent`;
-        await this.cacheManager.del(globalCacheKey);
-      }
       return post;
     } catch (error) {
       this.logger.error(`Create failed: ${error.message}`, error.stack);
@@ -179,7 +181,7 @@ export class PostsService {
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       include: {
         pollOptions: true,
-        _count: { select: { comments: true, reactions: true } },
+        // _count: { select: { comments: true, reactions: true } },
       },
     });
 
@@ -198,7 +200,7 @@ export class PostsService {
     const result = { data: posts, meta: { nextCursor, hasMore: !!nextCursor } };
 
     if (isLandingPage) {
-      await this.cacheManager.set(cacheKeyBase, result, 30 * 1000);
+      await this.cacheManager.set(cacheKeyBase, result, 30000);
     }
 
     return result;
@@ -221,6 +223,9 @@ export class PostsService {
   }
 
   async votePoll(tenantId: string, shadowUserId: string, pollOptionId: string) {
+    if (shadowUserId === 'public-visitor') {
+      throw new UnauthorizedException('You must be logged in to vote.');
+    }
     const option = await this.prisma.pollOption.findUnique({
       where: { id: pollOptionId },
       select: { postId: true },
@@ -245,7 +250,7 @@ export class PostsService {
       multi.expire(votersKey, 2592000);
       multi.expire(countsKey, 2592000);
       await multi.exec();
-
+      void this.syncVoteToDb(pollOptionId, shadowUserId, tenantId);
       return { success: true };
     } catch (error) {
       if (error instanceof ConflictException) throw error;
@@ -346,6 +351,252 @@ export class PostsService {
       if (error instanceof NotFoundException) throw error;
       this.logger.error(`Archive failed: ${error.message}`, error.stack);
       throw new InternalServerErrorException('Failed to archive post');
+    }
+  }
+
+  async getMyProfile(tenantId: string, shadowUserId: string) {
+    const profile = await this.prisma.anonymousProfile.findUnique({
+      where: { tenantId_shadowUserId: { tenantId, shadowUserId } },
+      select: { pseudonym: true, avatarUrl: true },
+    });
+    return profile;
+  }
+
+  async incrementView(postId: string) {
+    try {
+      await this.prisma.post.update({
+        where: { id: postId },
+        data: { viewCount: { increment: 1 } },
+      });
+    } catch (err) {
+      this.logger.warn(`Failed to increament view for ${postId}`, err);
+    }
+  }
+
+  async react(
+    tenantId: string,
+    shadowUserId: string,
+    postId: string,
+    type: 'AGREE' | 'DISAGREE',
+  ) {
+    if (shadowUserId === 'public-visitor') {
+      throw new UnauthorizedException('You must be logged in to react.');
+    }
+    const post = await this.prisma.post.findUnique({
+      where: { id: postId },
+      select: { tenantId: true, isGlobal: true },
+    });
+
+    if (!post) throw new NotFoundException('Post not found');
+    const userReactionKey = `{post:${postId}}:user_reactions`;
+    const countsKey = `{post:${postId}}:counts`;
+
+    try {
+      // 2. Check if already reacted (O(1))
+      const currentReaction = await this.redisService.client.hget(
+        userReactionKey,
+        shadowUserId,
+      );
+      const multi = this.redisService.client.multi();
+
+      // Scenario A: Toggle Off (Removing same reaction)
+      if (currentReaction === type) {
+        multi.hdel(userReactionKey, shadowUserId);
+        multi.hincrby(countsKey, type, -1);
+      }
+      // Scenario B: Switching (Agree -> Disagree)
+      else if (currentReaction) {
+        multi.hset(userReactionKey, shadowUserId, type);
+        multi.hincrby(countsKey, currentReaction, -1); // Decrement old
+        multi.hincrby(countsKey, type, 1); // Increment new
+      }
+      // Scenario C: New Reaction
+      else {
+        multi.hset(userReactionKey, shadowUserId, type);
+        multi.hincrby(countsKey, type, 1);
+      }
+
+      // Refresh TTL
+      multi.expire(userReactionKey, 2592000);
+      multi.expire(countsKey, 2592000);
+
+      await multi.exec();
+
+      void this.syncReactionToDb(
+        postId,
+        shadowUserId,
+        type,
+        tenantId,
+        currentReaction as ReactionType,
+      );
+
+      return { status: currentReaction === type ? 'removed' : 'added' };
+    } catch (error) {
+      this.logger.error(`Reaction failed: ${error.message}`);
+      throw new InternalServerErrorException('Reaction failed');
+    }
+  }
+
+  // --- COMMENTS ---
+  async createComment(
+    tenantId: string,
+    shadowUserId: string,
+    postId: string,
+    content: string,
+    isAnonymous = true,
+  ) {
+    if (shadowUserId === 'public-visitor')
+      throw new UnauthorizedException('Login required.');
+    this.moderationService.enforcePolicy(content);
+
+    const displayName = await this.resolveIdentity(
+      tenantId,
+      shadowUserId,
+      isAnonymous,
+    ); // Comments inherit anonymous state for now
+
+    try {
+      const comment = await this.prisma.comment.create({
+        data: {
+          content,
+          tenantId,
+          shadowUserId,
+          postId,
+          authorDisplayName: displayName,
+        },
+      });
+      // Increment comment count (Atomic)
+      await this.prisma.post.update({
+        where: { id: postId },
+        data: { commentCount: { increment: 1 } },
+      });
+      return comment;
+    } catch (error) {
+      this.logger.error(`Comment failed: ${error.message}`);
+      throw new InternalServerErrorException('Failed to comment');
+    }
+  }
+
+  async getComments(postId: string, dto: PaginationQueryDto) {
+    // Simple pagination for comments
+    const limit = Math.min(dto.limit || 50, 100);
+    const skip = ((dto.page || 1) - 1) * limit;
+
+    return this.prisma.comment.findMany({
+      where: { postId },
+      take: limit,
+      skip,
+      orderBy: { createdAt: 'asc' }, // Oldest first usually makes sense for conversation
+    });
+  }
+
+  async findOne(tenantId: string, postId: string, isPublicVisitor = false) {
+    const post = await this.prisma.post.findUnique({
+      where: { id: postId },
+      include: {
+        pollOptions: true,
+        _count: { select: { comments: true, reactions: true } },
+      },
+    });
+
+    if (!post) {
+      throw new NotFoundException('Post not found');
+    }
+    if (!post.isGlobal && post.tenantId !== tenantId) {
+      throw new NotFoundException('Post not found');
+    }
+
+    void this.incrementView(postId);
+
+    return post;
+  }
+
+  private async syncVoteToDb(
+    pollOptionId: string,
+    shadowUserId: string,
+    tenantId: string,
+  ) {
+    try {
+      await this.prisma.$transaction([
+        this.prisma.pollVote.create({
+          data: { pollOptionId, shadowUserId, tenantId },
+        }),
+        this.prisma.pollOption.update({
+          where: { id: pollOptionId },
+          data: { voteCount: { increment: 1 } },
+        }),
+      ]);
+    } catch (e) {
+      // Ignore dupes if redis/db desync, eventually consistent
+      if (e.code !== 'P2002') this.logger.error(`Sync Vote Failed`, e);
+    }
+  }
+
+  private async syncReactionToDb(
+    postId: string,
+    shadowUserId: string,
+    newType: string,
+    tenantId: string,
+    oldType?: ReactionType,
+  ) {
+    // Complex Sync Logic: We rely on eventual consistency or a specific 'Reaction' table update
+    // For simplicity in this snippet, we upsert.
+    try {
+      if (oldType && oldType === newType) {
+        // Delete
+        await this.prisma.reaction.deleteMany({
+          where: { postId, shadowUserId },
+        });
+        await this.prisma.post.update({
+          where: { id: postId },
+          data: {
+            [newType === 'AGREE' ? 'agreeCount' : 'disagreeCount']: {
+              decrement: 1,
+            },
+          },
+        });
+      } else {
+        // Upsert
+        await this.prisma.$transaction([
+          // Note: Prisma doesn't support update where composite ID easily, using delete+create or upsert logic
+          // Deleting old if exists
+          this.prisma.reaction.deleteMany({ where: { postId, shadowUserId } }),
+          this.prisma.reaction.create({
+            data: {
+              postId,
+              shadowUserId,
+              type:
+                newType === 'AGREE'
+                  ? ReactionType.AGREE
+                  : ReactionType.DISAGREE,
+              tenantId,
+            },
+          }),
+          // Update Counters
+          this.prisma.post.update({
+            where: { id: postId },
+            data: {
+              [newType === 'AGREE' ? 'agreeCount' : 'disagreeCount']: {
+                increment: 1,
+              },
+              ...(oldType
+                ? {
+                    [oldType === 'AGREE' ? 'agreeCount' : 'disagreeCount']: {
+                      decrement: 1,
+                    },
+                  }
+                : {}),
+            },
+          }),
+        ]);
+      }
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError) {
+        if (e.code !== 'P2002')
+          this.logger.error(`Sync Reaction Failed: ${e.message}`);
+      } else {
+        this.logger.error(`Sync Reaction Failed: ${e}`);
+      }
     }
   }
 }
