@@ -10,8 +10,15 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 
 export default function VeilFeedPage() {
-  const { posts, isLoading, hasMore, loadMore, addPostLocally, error } =
-    useVeilFeed();
+  const {
+    posts,
+    isLoading,
+    hasMore,
+    loadMore,
+    addPostLocally,
+    removePost,
+    error,
+  } = useVeilFeed();
 
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const observerTarget = useRef(null);
@@ -35,14 +42,14 @@ export default function VeilFeedPage() {
     <div className="min-h-screen bg-background pt-24 pb-10">
       {/* Header */}
       <div className="container mx-auto px-4 mb-8 flex flex-col md:flex-row justify-between items-center gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-gradient flex items-center gap-2">
-            <Radio className="w-8 h-8 text-primary animate-pulse" />
-            Global Live Feed
-          </h1>
-          <p className="text-muted-foreground">
-            Real-time anonymous pulse from around the world.
-          </p>
+        <div className="flex items-center gap-2">
+          {" "}
+          <div className="relative">
+            {" "}
+            <Radio className="w-6 h-6 text-primary animate-pulse" />{" "}
+            <span className="absolute top-0 right-0 w-2 h-2" />{" "}
+          </div>{" "}
+          <h1 className="text-xl font-bold text-gradient">Veil Live</h1>{" "}
         </div>
 
         {/* Create Action */}
@@ -87,7 +94,7 @@ export default function VeilFeedPage() {
         {/* Posts List */}
         {posts.map((post) => (
           <div key={post.id} className="animate-fade-in">
-            <PostCard post={post} />
+            <PostCard post={post} onDelete={(id) => removePost(id)} />
           </div>
         ))}
 

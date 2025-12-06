@@ -74,24 +74,25 @@ export class TenantsController {
     return this.apiKeysService.createApiKey(tenantId, dto);
   }
 
-  //   @Post()
-  //   @RequirePermission([PermissionAction.CREATE, 'Tenant'])
-  //   async createTenant(
-  //     @Body() dto: CreateTenantDto,
-  //     @GetUser() user: UserPayload,
-  //   ) {
-  //     return this.tenantsService.createTenant(dto, user.id);
-  //   }
+  @Get()
+  @ApiOperation({ summary: 'List all Organizations owned by the current user' })
+  @ApiResponse({ status: 200, description: 'List of tenants.' })
+  async getMyTenants(@User() user: UserPayload) {
+    // We allow any authenticated user to list their own tenants
+    return this.tenantsService.getUserTenants(user.id);
+  }
 
-  //   @Post(':id/keys')
-  //   @RequirePermission([PermissionAction.MANAGE, 'ApiKey'])
-  //   async generateKey(
-  //     @Param('id') tenantId: string,
-  //     @Body() dto: CreateApiKeyDto,
-  //     @GetUser() user: UserPayload,
-  //   ) {
-  //     // VETERAN TODO: Add ownership check here (Does user own tenantId?)
-  //     // For now, assuming Platform Admin access via RBAC
-  //     return this.apiKeysService.createApiKey(tenantId, dto);
-  //   }
+  @Get(':id/keys')
+  @ApiOperation({ summary: 'List all API Keys for the Organization' })
+  @ApiResponse({
+    status: 200,
+    description: 'List of keys metadata (secrets hidden).',
+  })
+  @RequirePermission([PermissionAction.MANAGE, 'ApiKey']) // Requires Admin-level access
+  async getTenantKeys(
+    @Param('id') tenantId: string,
+    @User() user: UserPayload,
+  ) {
+    return this.tenantsService.getTenantKeys(tenantId, user.id);
+  }
 }

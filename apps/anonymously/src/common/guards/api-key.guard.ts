@@ -14,7 +14,6 @@ import { Request } from 'express';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
-import { IS_USER_OPTIONAL_KEY } from '../decorators/optional-auth.decorator';
 
 // Strict Type for the Context we receive from IAM
 export class TenantContext {
@@ -41,25 +40,20 @@ export class ApiKeyGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
+    const apiKey = request.headers['x-api-key'] as string;
+    const userId = request.headers['x-user-id'] as string;
     // 1. Extract Headers (Case insensitive usually, but strict here)
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);
-    if (isPublic) {
-      return true;
-    }
-    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
-    const apiKey = request.headers['x-api-key'] as string;
-    const userId = request.headers['x-user-id'] as string;
-
-    if (!apiKey) {
-      throw new UnauthorizedException('Missing x-api-key header');
-    }
-
-    // VETERAN RULE: B2B Apps must declare the End-User
-    if (!userId) {
-      throw new UnauthorizedException('Missing x-user-id header');
+    if (!apiKey || !userId) {
+      if (isPublic) {
+        request.user = { shadowId: 'public-visitor' };
+        return true;
+      }
+      throw new UnauthorizedException('Missing x-api-key or x-user-id header');
     }
 
     try {
@@ -98,8 +92,8 @@ export class ApiKeyGuard implements CanActivate {
       return true;
     } catch (error) {
       // Handle Axios Errors
-      if (error.response) {
-        if (error.response.status === 401 || error.response.status === 403) {
+      if (error) {
+        if (error.response?.status === 401 || error.response?.status === 403) {
           this.logger.warn(`Invalid API Key used: ${apiKey.slice(0, 10)}...`);
           throw new UnauthorizedException('Invalid or Expired API Key');
         }
@@ -110,6 +104,7 @@ export class ApiKeyGuard implements CanActivate {
         `IAM Service Auth Failed: ${error.message}`,
         error.stack,
       );
+      if (isPublic) return true;
       throw new InternalServerErrorException(
         'Authentication Service Unavailable',
       );

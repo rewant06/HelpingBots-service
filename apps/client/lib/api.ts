@@ -1,5 +1,3 @@
-
-
 import axios, { isAxiosError } from "axios";
 import { useAuthStore } from "@/store/auth.store";
 import { refreshAccessToken } from "./auth.service";
@@ -95,7 +93,7 @@ api.interceptors.response.use(
         );
         processQueue(refreshError, null);
         useAuthStore.getState().clearAuth();
-        window.location.href = "/login";
+        if (typeof window !== "undefined") window.location.href = "/login";
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;

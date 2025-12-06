@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { veilApi } from "@/lib/veil-client";
 import { Post } from "@/types/veil";
 import { logger } from "@/lib/logger";
+import { useInteractionStore } from "@/store/interaction.store";
 
 export function useVeilFeed() {
   const [posts, setPosts] = useState<Post[]>([]);
@@ -13,6 +14,8 @@ export function useVeilFeed() {
   const [isFatalError, setIsFatalError] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const hydrateInteractions = useInteractionStore((state) => state.hydrate);
 
   // Prevent duplicate fetches in React Strict Mode
   const initialized = useRef(false);
@@ -32,14 +35,23 @@ export function useVeilFeed() {
         const response = await veilApi.getGlobalFeed(
           currentCursor || undefined
         );
+        const newPosts = response.data;
+        const postIds = newPosts.map((p) => p.id);
+
+        try {
+          veilApi.getInteractions(postIds).then((map) => {
+            hydrateInteractions(map);
+          });
+        } catch (err) {
+          logger.warn("Failed to hydrate interactions", err);
+        }
 
         setPosts((prev) => {
-          // If reset, replace. If append, filter duplicates (safety) to avoid key collisions
-          if (reset) return response.data;
-          const newPosts = response.data.filter(
+          if (reset) return newPosts;
+          const uniqueNew = newPosts.filter(
             (newP) => !prev.find((p) => p.id === newP.id)
           );
-          return [...prev, ...newPosts];
+          return [...prev, ...uniqueNew];
         });
 
         setCursor(response.meta.nextCursor);
@@ -56,7 +68,7 @@ export function useVeilFeed() {
         setIsFetchingMore(false);
       }
     },
-    [cursor, posts.length, isFatalError]
+    [cursor, posts.length, isFatalError, hydrateInteractions]
   );
 
   // Initial Load
@@ -69,7 +81,12 @@ export function useVeilFeed() {
 
   // Optimistic UI Updates
   const addPostLocally = (newPost: Post) => {
-    setPosts((prev) => [newPost, ...prev]);
+    const postWithAuth = { ...newPost, isAuthor: true };
+    setPosts((prev) => [postWithAuth, ...prev]);
+  };
+
+  const removePost = (postId: string) => {
+    setPosts((currentPosts) => currentPosts.filter((p) => p.id !== postId));
   };
 
   return {
@@ -81,5 +98,6 @@ export function useVeilFeed() {
     loadMore: () => fetchFeed(false),
     refresh: () => fetchFeed(true),
     addPostLocally,
+    removePost,
   };
 }

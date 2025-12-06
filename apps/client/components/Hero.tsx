@@ -139,8 +139,8 @@ const Hero = () => {
               size="lg"
               className="bg-gradient-to-r from-primary via-accent to-primary text-white hover:opacity-90 transition-all text-base md:text-lg px-8 py-6 rounded-full shadow-lg shadow-elevated hover:scale-105 group bg-[length:200%_auto] animate-shimmer"
             >
-              <Link href="/get-started">
-                Start Demo
+              <Link href="/products/veil">
+                 VEIL
                 <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
               </Link>
             </Button>

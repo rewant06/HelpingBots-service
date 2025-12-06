@@ -41,7 +41,7 @@ export function VeilPricing() {
               <div className="text-muted-foreground mb-8">per month</div>
               
               <Button asChild size="lg" className="w-full text-lg h-14 bg-primary hover:opacity-90">
-                <Link href="/login?redirect=/dashboard/developer">
+                <Link href="/dashboard/developer">
                   Generate API Key
                 </Link>
               </Button>

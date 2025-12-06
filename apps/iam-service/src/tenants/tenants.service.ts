@@ -31,7 +31,7 @@ export class TenantsService {
     name: string,
     requestedSlug?: string,
   ): Promise<string> {
-    let slug =
+    const slug =
       requestedSlug ||
       name
         .toLowerCase()
@@ -81,15 +81,22 @@ export class TenantsService {
           ActivityLogStatus.SUCCESS,
           'Tenant',
           tenant.id,
-          { slug: finalSlug, type: dto.type },
+          {
+            slug: finalSlug,
+            type: dto.type,
+            jobTitle: dto.jobTitle,
+            authorized: dto.isAuthorized,
+          },
           undefined,
           tx,
         );
         return tenant;
       });
       return result;
-    } catch (err) {
-      this.logger.error(`Tenant creation failed: ${err.message}`, err.stack);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const stack = err instanceof Error ? err.stack : undefined;
+      this.logger.error(`Tenant creation failed: ${msg}`, stack);
 
       await this.activityLogService.createLog(
         ActivityLogActionType.CREATE,
@@ -97,16 +104,15 @@ export class TenantsService {
         'Tenant',
         null,
         { dto, ownerId },
-        err.message,
+        msg,
       );
-    }
-
-    if (Error instanceof Prisma.PrismaClientKnownRequestError) {
-      if (Error.code === 'P2002') {
-        throw new ConflictException('Organization ID (slug) already taken.');
+      if (err instanceof Prisma.PrismaClientKnownRequestError) {
+        if (err.code === 'P2002') {
+          throw new ConflictException('Organization ID (slug) already taken.');
+        }
       }
+      throw new InternalServerErrorException('Failed to create Organization.');
     }
-    throw new InternalServerErrorException('Failed to create Organization.');
   }
 
   async getTenantById(tenantId: string, userId: string) {
@@ -135,12 +141,63 @@ export class TenantsService {
         throw new NotFoundException('Organization not found');
       }
       return tenant;
-    } catch (err) {
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
       if (Error instanceof NotFoundException) throw Error;
-      this.logger.error(`Get Tenant Failed: ${err.message}`);
+      this.logger.error(`Get Tenant Failed: ${msg}`);
       throw new InternalServerErrorException(
         'Could not fetch Organization details',
       );
     }
+  }
+
+  async getUserTenants(userId: string) {
+    try {
+      return await this.prisma.tenant.findMany({
+        where: { ownerId: userId },
+        include: {
+          subscription: true,
+          _count: {
+            select: { apiKeys: true, shadowUsers: true },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`List Tenants Failed: ${msg}`);
+      throw new InternalServerErrorException('Could not fetch organizations');
+    }
+  }
+
+  async getTenantKeys(tenantId: string, userId: string) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { ownerId: true },
+    });
+
+    if (!tenant) {
+      throw new NotFoundException('Organization not found');
+    }
+
+    if (tenant.ownerId !== userId) {
+      throw new NotFoundException('Organization not found');
+    }
+    const keys = await this.prisma.apiKey.findMany({
+      where: { tenantId },
+      select: {
+        id: true,
+        name: true,
+        prefix: true,
+        last4: true,
+        scopes: true,
+        lastUsedAt: true,
+        createdAt: true,
+        expiresAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return keys;
   }
 }

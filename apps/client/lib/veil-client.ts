@@ -1,8 +1,9 @@
 import axios from "axios";
 import { useAuthStore } from "@/store/auth.store";
-import { FeedResponse, Post } from "@/types/veil"; // Ensure Post type includes comments count
+import { FeedResponse, Post, InteractionMap } from "@/types/veil"; // Ensure Post type includes comments count
 
-const BASE_URL = process.env.NEXT_PUBLIC_VEIL_API_URL || "http://localhost:5001/v1/posts";
+const BASE_URL =
+  process.env.NEXT_PUBLIC_VEIL_API_URL || "http://localhost:5001/v1/posts";
 const PUBLIC_KEY = process.env.NEXT_PUBLIC_VEIL_API_KEY || "";
 
 const veilClient = axios.create({
@@ -27,7 +28,9 @@ export const veilApi = {
     const params = new URLSearchParams();
     if (cursor) params.append("cursor", cursor);
     params.append("limit", "20");
-    const { data } = await veilClient.get<FeedResponse>(`/global?${params.toString()}`);
+    const { data } = await veilClient.get<FeedResponse>(
+      `/global?${params.toString()}`
+    );
     return data;
   },
 
@@ -35,7 +38,9 @@ export const veilApi = {
     const params = new URLSearchParams();
     if (cursor) params.append("cursor", cursor);
     params.append("limit", "20");
-    const { data } = await veilClient.get<FeedResponse>(`/?${params.toString()}`);
+    const { data } = await veilClient.get<FeedResponse>(
+      `/?${params.toString()}`
+    );
     return data;
   },
 
@@ -46,16 +51,23 @@ export const veilApi = {
 
   getMyProfile: async () => {
     try {
-        const { data } = await veilClient.get<{ pseudonym: string; avatarUrl: string }>("/me/profile");
-        return data;
-    } catch (e) { return null; }
+      const { data } = await veilClient.get<{
+        pseudonym: string;
+        avatarUrl: string;
+      }>("/me/profile");
+      return data;
+    } catch (e) {
+      return null;
+    }
   },
 
   getComments: async (postId: string, cursor?: string) => {
     // Simple pagination for comments
     const params = new URLSearchParams();
     if (cursor) params.append("page", cursor); // Backend currently uses page/limit for comments
-    const { data } = await veilClient.get<any[]>(`/${postId}/comments?${params.toString()}`);
+    const { data } = await veilClient.get<any[]>(
+      `/${postId}/comments?${params.toString()}`
+    );
     return data;
   },
 
@@ -71,7 +83,7 @@ export const veilApi = {
       isAnonymous,
       isGlobal: true,
       pollOptions: pollOptions?.length ? pollOptions : undefined,
-      authorDisplayName
+      authorDisplayName,
     };
     const { data } = await veilClient.post("", payload);
     return data;
@@ -89,17 +101,39 @@ export const veilApi = {
 
   // --- INTERACTION ---
   vote: async (pollOptionId: string) => {
-    const { data } = await veilClient.post(`/poll-options/${pollOptionId}/vote`);
+    const { data } = await veilClient.post(
+      `/poll-options/${pollOptionId}/vote`
+    );
     return data;
   },
 
-  react: async (postId: string, type: 'AGREE' | 'DISAGREE') => {
+  react: async (postId: string, type: "AGREE" | "DISAGREE") => {
     const { data } = await veilClient.post(`/${postId}/react`, { type });
     return data;
   },
 
-  createComment: async (postId: string, content: string, isAnonymous = true) => {
-    const { data } = await veilClient.post(`/${postId}/comments`, { content, isAnonymous });
+  createComment: async (
+    postId: string,
+    content: string,
+    isAnonymous = true
+  ) => {
+    const { data } = await veilClient.post(`/${postId}/comments`, {
+      content,
+      isAnonymous,
+    });
     return data;
-  }
+  },
+
+  trackView: async (postId: string) => {
+    veilClient.post(`/${postId}/view`).catch(() => {});
+  },
+
+  getInteractions: async (postIds: string[]) => {
+    if (postIds.length === 0) return {};
+    // Ensure we are sending the request correctly as per Backend DTO
+    const { data } = await veilClient.post<InteractionMap>("/interactions", {
+      postIds,
+    });
+    return data;
+  },
 };

@@ -5,6 +5,8 @@ import {
   Matches,
   IsEnum,
   IsOptional,
+  IsBoolean,
+  Equals,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { TenantType } from '@prisma/iam-client';
@@ -34,4 +36,16 @@ export class CreateTenantDto {
   @IsEnum(TenantType)
   @IsOptional()
   type?: TenantType; // Defaults to ORGANIZATION if omitted
+
+  @ApiProperty({ example: 'CTO', description: 'Job Title of the creator' })
+  @IsString()
+  @IsNotEmpty()
+  jobTitle: string;
+
+  @ApiProperty({ example: true, description: 'Legal declaration of authority' })
+  @IsBoolean()
+  @Equals(true, {
+    message: 'You must confirm you are authorized to create this organization.',
+  })
+  isAuthorized: boolean;
 }

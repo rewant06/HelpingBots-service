@@ -51,8 +51,11 @@ export class PostsController {
   @Public()
   @ApiOperation({ summary: 'Get the Global Public Feed (HelpingBots)' })
   @ApiResponse({ status: 200, description: 'Returns global posts.' })
-  findAllGlobal(@Query() dto: PaginationQueryDto) {
-    return this.postsService.findAllGlobal(dto);
+  findAllGlobal(
+    @Query() dto: PaginationQueryDto,
+    @ShadowUser() user?: { shadowId: string },
+  ) {
+    return this.postsService.findAllGlobal(dto, user?.shadowId);
   }
   // --- 2. GET TENANT FEED (Private) ---
   @Get()
@@ -61,8 +64,9 @@ export class PostsController {
   findAllTenant(
     @Tenant() tenant: TenantContext,
     @Query() dto: PaginationQueryDto,
+    @ShadowUser() user: { shadowId: string },
   ) {
-    return this.postsService.findAllTenant(tenant.tenantId, dto);
+    return this.postsService.findAllTenant(tenant.tenantId, dto, user.shadowId);
   }
 
   // --- 3. CREATE POST ---
@@ -192,11 +196,40 @@ export class PostsController {
     return this.postsService.getComments(postId, dto);
   }
 
+  // --- 9.FINDONE ---
   @Get(':id')
   @OptionalUser()
   @Public()
   @ApiOperation({ summary: 'Get a single post by ID' })
   async findOne(@Param('id') postId: string, @Tenant() tenant: TenantContext) {
     return this.postsService.findOne(tenant.tenantId, postId);
+  }
+  // --- 10. BATCH INTERACTIONS ---
+  @Post('interactions')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Hydrate Feed State (Reactions/Votes)' })
+  getInteractions(
+    @Body('postIds') postIds: string[],
+    @Tenant() Tenant: TenantContext,
+    @ShadowUser() user: { shadowId: string },
+  ) {
+    return this.postsService.getUserInteractions(
+      Tenant.tenantId,
+      user.shadowId,
+      postIds,
+    );
+  }
+
+  @Post(':id/view')
+  @HttpCode(HttpStatus.OK)
+  @OptionalUser() // Public users count too
+  @ApiOperation({ summary: 'Increment View Count (Impression)' })
+  async trackView(
+    @Param('id') postId: string,
+    @Tenant() tenant: TenantContext,
+  ) {
+    // Fire-and-forget: Increments Redis buffer instantly
+    this.postsService.incrementView(postId);
+    return { success: true };
   }
 }

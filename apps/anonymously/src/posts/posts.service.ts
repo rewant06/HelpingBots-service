@@ -153,72 +153,109 @@ export class PostsService {
     where: any,
     dto: PaginationQueryDto,
     cacheKeyBase: string,
+    currentUserId?: string,
   ) {
     const limit = Math.min(dto.limit || 20, 50);
     const isLandingPage = !dto.cursor;
 
+    // 1. Container for RAW data ( No User Info)
+    let rawResult: { data: any[]; meta: any } | null = null;
+
+    // 2. TRY CACHE (Raw Data Only)
     if (isLandingPage) {
       const cached = await this.cacheManager.get(cacheKeyBase);
-      if (cached) return cached;
-    }
-
-    let cursorObj: { createdAt: Date; id: string } | undefined;
-    if (dto.cursor) {
-      try {
-        const decoded = Buffer.from(dto.cursor, 'base64').toString('utf-8');
-        const parsed = JSON.parse(decoded);
-        cursorObj = { createdAt: new Date(parsed.createdAt), id: parsed.id };
-      } catch (e) {
-        throw new BadRequestException('Invalid cursor format');
+      if (cached) {
+        rawResult = cached as { data: any[]; meta: any };
       }
     }
 
-    const posts = await this.prisma.post.findMany({
-      where,
-      take: limit + 1,
-      cursor: cursorObj ? { createdAt_id: cursorObj } : undefined,
-      skip: cursorObj ? 1 : 0,
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      include: {
-        pollOptions: true,
-        // _count: { select: { comments: true, reactions: true } },
-      },
+    // 3. IF NO CACHE, QUERY DB
+    if (!rawResult) {
+      let cursorObj: { createdAt: Date; id: string } | undefined;
+
+      // Parse Cursor
+      if (dto.cursor) {
+        try {
+          const decoded = Buffer.from(dto.cursor, 'base64').toString('utf-8');
+          const parsed = JSON.parse(decoded);
+          cursorObj = { createdAt: new Date(parsed.createdAt), id: parsed.id };
+        } catch (e) {
+          throw new BadRequestException('Invalid cursor format');
+        }
+      }
+
+      // Execute Query (Inside the block now!)
+      const posts = await this.prisma.post.findMany({
+        where,
+        take: limit + 1,
+        cursor: cursorObj ? { createdAt_id: cursorObj } : undefined,
+        skip: cursorObj ? 1 : 0,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        include: { pollOptions: true },
+      });
+
+      // Calculate Next Cursor
+      let nextCursor: string | null = null;
+      if (posts.length > limit) {
+        const nextItem = posts.pop();
+        if (nextItem) {
+          const nextCursorObj = {
+            createdAt: nextItem.createdAt,
+            id: nextItem.id,
+          };
+          nextCursor = Buffer.from(JSON.stringify(nextCursorObj)).toString(
+            'base64',
+          );
+        }
+      }
+
+      // Assign to rawResult
+      rawResult = {
+        data: posts,
+        meta: { nextCursor, hasMore: !!nextCursor },
+      };
+
+      // Cache the RAW data
+      if (isLandingPage) {
+        await this.cacheManager.set(cacheKeyBase, rawResult, 30000);
+      }
+    }
+    const safeData = rawResult!.data.map((p) => {
+      const isAuthor =
+        currentUserId && p.shadowUserId
+          ? p.shadowUserId === currentUserId
+          : false;
+
+      const { shadowUserId, ...rest } = p;
+
+      return {
+        ...rest,
+        isAuthor,
+      };
     });
 
-    let nextCursor: string | null = null;
-    if (posts.length > limit) {
-      const nextItem = posts.pop();
-      const nextCursorObj = {
-        createdAt: nextItem!.createdAt,
-        id: nextItem!.id,
-      };
-      nextCursor = Buffer.from(JSON.stringify(nextCursorObj)).toString(
-        'base64',
-      );
-    }
-
-    const result = { data: posts, meta: { nextCursor, hasMore: !!nextCursor } };
-
-    if (isLandingPage) {
-      await this.cacheManager.set(cacheKeyBase, result, 30000);
-    }
-
-    return result;
+    return { ...rawResult, data: safeData };
   }
 
-  async findAllTenant(tenantId: string, dto: PaginationQueryDto) {
+  async findAllTenant(
+    tenantId: string,
+    dto: PaginationQueryDto,
+    userId?: string,
+  ) {
     return this.findAllGeneric(
       { tenantId, deletedAt: null },
       dto,
       `feed:${tenantId}:recent`,
+      userId,
     );
   }
 
-  async findAllGlobal(dto: PaginationQueryDto) {
+  async findAllGlobal(dto: PaginationQueryDto, userId?: string) {
     return this.findAllGeneric(
       { isGlobal: true, deletedAt: null },
       dto,
       `feed:global:recent`,
+      userId,
     );
   }
 
@@ -362,17 +399,6 @@ export class PostsService {
     return profile;
   }
 
-  async incrementView(postId: string) {
-    try {
-      await this.prisma.post.update({
-        where: { id: postId },
-        data: { viewCount: { increment: 1 } },
-      });
-    } catch (err) {
-      this.logger.warn(`Failed to increament view for ${postId}`, err);
-    }
-  }
-
   async react(
     tenantId: string,
     shadowUserId: string,
@@ -511,6 +537,48 @@ export class PostsService {
     return post;
   }
 
+  async getUserInteractions(
+    tenantId: string,
+    shadowUserId: string,
+    postIds: string[],
+  ) {
+    if (!postIds.length || shadowUserId === 'public-visitor') {
+      return {};
+    }
+
+    const pipeline = this.redisService.client.pipeline();
+    postIds.forEach((id) => {
+      pipeline.hget(`{post:${id}:user_reaction}`, shadowUserId);
+      pipeline.sismember(`poll:${id}:voters`, shadowUserId);
+    });
+    const results = await pipeline.exec();
+    const map: Record<string, { reaction: string | null; hasVoted: boolean }> =
+      {};
+    if (results) {
+      postIds.forEach((id, index) => {
+        const reactionRes = results[index * 2];
+        const voteRes = results[index * 2 + 1];
+
+        const reaction = reactionRes?.[1] as string | null;
+        const hasVoted = (voteRes?.[1] as number) === 1;
+
+        map[id] = { reaction, hasVoted };
+      });
+    }
+    return map;
+  }
+
+  async incrementView(postId: string) {
+    try {
+      const pipeline = this.redisService.client.pipeline();
+      pipeline.incr(`post:${postId}:view_buffer`);
+      pipeline.sadd(`posts:pending_view_sync`, postId);
+      await pipeline.exec();
+    } catch (err) {
+      this.logger.error(`Failed to buffer view for ${postId}`, err);
+    }
+  }
+
   private async syncVoteToDb(
     pollOptionId: string,
     shadowUserId: string,
@@ -600,3 +668,4 @@ export class PostsService {
     }
   }
 }
+

@@ -50,8 +50,8 @@ export function VeilHero() {
         {/* CTA Buttons */}
         <div className={`flex flex-col sm:flex-row gap-4 justify-center items-center transition-all duration-700 delay-300 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
           <Button asChild size="lg" className="text-lg px-8 py-6 rounded-full shadow-elevated hover:scale-105 transition-transform">
-            <Link href="/veil/feed">
-              Launch Client Zero
+            <Link href="/veil">
+              VEIL Demo
               <ArrowRight className="ml-2 w-5 h-5" />
             </Link>
           </Button>

@@ -33,6 +33,14 @@ export const USER_SELECT_FIELDS = {
       name: true,
     },
   },
+  ownedTenants: {
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      type: true,
+    },
+  },
 } satisfies Prisma.UserSelect;
 const PROFILE_CACHE_TTL = 3600;
 

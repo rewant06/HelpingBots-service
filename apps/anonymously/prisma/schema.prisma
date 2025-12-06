@@ -120,6 +120,7 @@ model Comment {
 
   @@index([postId])
   @@index([tenantId])
+  // @@index([postId, createdAt])
 }
 
 // --- 5. REACTIONS ---
