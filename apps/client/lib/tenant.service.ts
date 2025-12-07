@@ -22,12 +22,12 @@ export interface ApiKeyResponse {
 }
 
 export const getMyTenants = async () => {
-  const { data } = await api.get<Tenant[]>("/tenants");
+  const { data } = await api.get<Tenant[]>("/tenants/");
   return data;
 };
 
 export const createTenant = async (payload: CreateTenantPayload) => {
-  const { data } = await api.post<Tenant>("/tenants", payload);
+  const { data } = await api.post<Tenant>("/tenants/", payload);
   return data;
 };
 
