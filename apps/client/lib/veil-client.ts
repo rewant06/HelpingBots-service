@@ -3,7 +3,7 @@ import { useAuthStore } from "@/store/auth.store";
 import { FeedResponse, Post, InteractionMap } from "@/types/veil"; // Ensure Post type includes comments count
 
 const BASE_URL =
-  process.env.NEXT_PUBLIC_VEIL_API_URL || "http://localhost:5001/v1/posts";
+  process.env.NEXT_PUBLIC_VEIL_API_URL || "http://localhost:8001/v1/posts";
 const PUBLIC_KEY = process.env.NEXT_PUBLIC_VEIL_API_KEY || "";
 
 const veilClient = axios.create({
