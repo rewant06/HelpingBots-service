@@ -29,7 +29,7 @@ export const veilApi = {
     if (cursor) params.append("cursor", cursor);
     params.append("limit", "20");
     const { data } = await veilClient.get<FeedResponse>(
-      `/global?${params.toString()}`
+      `/global/?${params.toString()}`
     );
     return data;
   },
@@ -90,12 +90,12 @@ export const veilApi = {
   },
 
   updatePost: async (postId: string, content: string) => {
-    const { data } = await veilClient.patch(`/${postId}`, { content });
+    const { data } = await veilClient.patch(`/${postId}/`, { content });
     return data;
   },
 
   archivePost: async (postId: string) => {
-    const { data } = await veilClient.delete(`/${postId}`);
+    const { data } = await veilClient.delete(`/${postId}/`);
     return data;
   },
 
