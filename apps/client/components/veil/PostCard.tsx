@@ -370,7 +370,7 @@ export function PostCard({ post, onDelete }: PostCardProps) {
             variant="ghost"
             onClick={() => handleReact("AGREE")}
             className={cn(
-              "rounded-full px-4 gap-2 transition-all hover:bg-emerald-500/10 hover:text-emerald-600",
+              "rounded-full px-2 sm:px-4 gap-2 transition-all hover:bg-emerald-500/10 hover:text-emerald-600",
               interaction?.reaction === "AGREE"
                 ? "text-emerald-600 bg-emerald-500/10 ring-1 ring-emerald-500/20"
                 : "text-muted-foreground"
