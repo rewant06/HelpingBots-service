@@ -202,7 +202,7 @@ function UserCard({ user }: { user: User }) {
             </p>
           </div>
         </div>
-        <StatusBadge isVerified={user.isEmailVerified} />
+        <StatusBadge isVerified={user.isEmailVerified || false} />
       </CardHeader>
       
       <CardContent className="pb-3 pt-0">
@@ -264,7 +264,7 @@ function UserTableRow({ user }: { user: User }) {
         </div>
       </TableCell>
       <TableCell>
-        <StatusBadge isVerified={user.isEmailVerified} />
+        <StatusBadge isVerified={user.isEmailVerified || false} />
       </TableCell>
       <TableCell className="text-sm text-muted-foreground">
         {format(new Date(user.createdAt), "MMM d, yyyy")}
