@@ -13,7 +13,7 @@ export function VeilHero() {
   }, []);
 
   return (
-    <section className="relative min-h-[80vh] flex items-center justify-center overflow-hidden bg-background">
+    <section className="relative min-h-[80vh] flex items-center justify-center overflow-hidden bg-background pt-32 md:pt-0">
       {/* Cyberpunk Grid Background */}
       <div 
         className="absolute inset-0 opacity-[0.03] dark:opacity-[0.05]"
@@ -36,7 +36,7 @@ export function VeilHero() {
         </div>
 
         {/* Headline */}
-        <h1 className={`text-5xl md:text-7xl lg:text-8xl font-bold tracking-tight mb-6 transition-all duration-700 delay-100 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
+        <h1 className={`text-4xl md:text-7xl lg:text-8xl font-bold tracking-tight mb-6 transition-all duration-700 delay-100 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
           Give them a <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary via-accent to-primary bg-[length:200%_auto] animate-shimmer">Mask</span>,<br />
           and they will tell you the <span className="text-foreground">Truth</span>.
         </h1>
