@@ -220,6 +220,23 @@ export class PostsService {
         await this.cacheManager.set(cacheKeyBase, rawResult, 30000);
       }
     }
+
+    let interactionMap: Record<
+      string,
+      { reaction: string | null; hasVoted: boolean }
+    >;
+
+    if (currentUserId && rawResult.data.length > 0) {
+      const postIds = rawResult.data.map((p) => p.id);
+
+      // We reuse the existing logic you wrote for batch fetching
+      interactionMap = await this.getUserInteractions(
+        'ignore-tenant',
+        currentUserId,
+        postIds,
+      );
+    }
+
     const safeData = rawResult!.data.map((p) => {
       const isAuthor =
         currentUserId && p.shadowUserId
@@ -227,10 +244,15 @@ export class PostsService {
           : false;
 
       const { shadowUserId, ...rest } = p;
+      const interactions = interactionMap[p.id] || {
+        reaction: null,
+        hasVoted: false,
+      };
 
       return {
         ...rest,
         isAuthor,
+        userReaction: interactions.reaction,
       };
     });
 
@@ -548,8 +570,8 @@ export class PostsService {
 
     const pipeline = this.redisService.client.pipeline();
     postIds.forEach((id) => {
-      pipeline.hget(`{post:${id}:user_reaction}`, shadowUserId);
-      pipeline.sismember(`poll:${id}:voters`, shadowUserId);
+      pipeline.hget(`{post:${id}}:user_reactions`, shadowUserId);
+      pipeline.sismember(`{poll:${id}}:voters`, shadowUserId);
     });
     const results = await pipeline.exec();
     const map: Record<string, { reaction: string | null; hasVoted: boolean }> =
@@ -668,4 +690,3 @@ export class PostsService {
     }
   }
 }
-
