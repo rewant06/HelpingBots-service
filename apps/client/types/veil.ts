@@ -26,6 +26,9 @@ export interface Post {
   isPoll: boolean;
   pollOptions?: PollOption[];
 
+  userReaction?: 'AGREE' | 'DISAGREE' | null;
+  hasVoted?: boolean;
+
   // Cursor for pagination
   cursorId?: string; 
 }
