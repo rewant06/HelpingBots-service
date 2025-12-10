@@ -49,7 +49,7 @@ export function CreatePostDialog({ onPostCreated }: CreatePostDialogProps) {
   const [isAnonymous, setIsAnonymous] = useState(true);
   const [pseudonym, setPseudonym] = useState(""); // User's alias
   const [hasExistingIdentity, setHasExistingIdentity] = useState(false); // If true, locked
-
+  const [identityError, setIdentityError] = useState(false);
   // Poll State
   const [showPoll, setShowPoll] = useState(false);
   const [pollOptions, setPollOptions] = useState<string[]>(["", ""]);
@@ -95,6 +95,7 @@ export function CreatePostDialog({ onPostCreated }: CreatePostDialogProps) {
         setShowPoll(false);
         setPollOptions(["", ""]);
         setBlockedWords([]);
+        setIdentityError(false);
         // We DO NOT reset pseudonym if they have an existing one
         if (!hasExistingIdentity) setPseudonym("");
       }, 300);
@@ -121,6 +122,7 @@ export function CreatePostDialog({ onPostCreated }: CreatePostDialogProps) {
 
     // 3. Identity Validation (If Anon)
     if (isAnonymous && !pseudonym.trim()) {
+      setIdentityError(true);
       toast({
         title: "Identity Required",
         description: "Please set a pseudonym first.",
@@ -322,19 +324,40 @@ export function CreatePostDialog({ onPostCreated }: CreatePostDialogProps) {
                   </div>
                 ) : (
                   /* INPUT STATE (New User) */
+
                   <div className="space-y-2">
-                    <Label className="text-xs font-bold uppercase text-muted-foreground">
-                      Establish Pseudonym
+                    <Label
+                      className={`text-xs font-bold uppercase transition-colors ${
+                        identityError
+                          ? "text-destructive"
+                          : "text-muted-foreground"
+                      }`}
+                    >
+                      Required Nickname
                     </Label>
                     <div className="relative">
                       <Input
                         value={pseudonym}
-                        onChange={(e) => setPseudonym(e.target.value)}
+                        onChange={(e) => {
+                          setPseudonym(e.target.value);
+
+                          if (identityError) setIdentityError(false);
+                        }}
                         placeholder="e.g. Cyber Wolf"
                         maxLength={20}
-                        className="pl-10 h-12 bg-background/50 border-primary/20 focus:border-primary text-lg"
+                        className={`pl-10 h-12 bg-background/50 text-lg transition-all ${
+                          identityError
+                            ? "border-destructive focus-visible:ring-destructive animate-pulse"
+                            : "border-primary/20 focus:border-primary"
+                        }`}
                       />
-                      <Shield className="absolute left-3 top-3.5 w-5 h-5 text-muted-foreground" />
+                      <Shield
+                        className={`absolute left-3 top-3.5 w-5 h-5 transition-colors ${
+                          identityError
+                            ? "text-destructive"
+                            : "text-muted-foreground"
+                        }`}
+                      />
                     </div>
                     <p className="text-[10px] text-muted-foreground flex items-center gap-1">
                       <Lock className="w-3 h-3" /> This identity will be

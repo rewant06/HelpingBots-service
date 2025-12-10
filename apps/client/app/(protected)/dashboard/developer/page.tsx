@@ -77,6 +77,8 @@ export default function DeveloperConsole() {
   const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null);
   const [apiKeys, setApiKeys] = useState<ApiKeyDisplay[]>([]);
 
+  const [slugError, setSlugError] = useState("");
+
   // --- 2. TENANT CREATION FORM STATE ---
   const [createOpen, setCreateOpen] = useState(false);
   const [newTenantName, setNewTenantName] = useState("");
@@ -91,6 +93,9 @@ export default function DeveloperConsole() {
     "VEIL"
   );
   const [generatedKey, setGeneratedKey] = useState<ApiKeyResponse | null>(null);
+
+  const [jobError, setJobError] = useState(false);
+  const [authError, setAuthError] = useState(false);
 
   // --- 4. UI/LOADING STATE ---
   const [loading, setLoading] = useState(true); // Initial Page Load
@@ -151,11 +156,82 @@ export default function DeveloperConsole() {
     refreshKeys();
   }, [refreshKeys]);
 
+  useEffect(() => {
+    // Only auto-fill if the user hasn't typed a custom slug yet OR if the slug is empty
+    if (!newTenantSlug || newTenantSlug.length < 3) {
+      const autoSlug = newTenantName
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9\s-]/g, "") // Remove special chars
+        .replace(/\s+/g, "-"); // Replace spaces with -
+      setNewTenantSlug(autoSlug);
+    }
+  }, [newTenantName]);
+
+  // VALIDATION 2: Helper to validate slug format
+  const handleSlugChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setNewTenantSlug(val);
+
+    // Regex: Only lowercase letters, numbers, and hyphens. No spaces.
+    const slugRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+    if (val && !slugRegex.test(val)) {
+      setSlugError(
+        "Slug must be lowercase, numbers, and hyphens only (e.g., helping-bots)."
+      );
+    } else {
+      setSlugError(""); // Clear error
+    }
+  };
+
   // --- 7. ACTION HANDLERS ---
 
   const handleCreateTenant = async () => {
+    setJobError(false);
+    setAuthError(false);
+
+    let hasError = false;
     // Validation
-    if (!newTenantName.trim() || !jobTitle.trim() || !isAuthorized) return;
+    if (!newTenantName.trim()) {
+      setJobError(true);
+      toast({
+        title: "Required Field",
+        description: "Organization Name is required.",
+        variant: "destructive",
+      });
+      hasError = true;
+    }
+    if (!jobTitle.trim()) {
+      setJobError(true);
+      toast({
+        title: "Required Field",
+        description: "Job Title is required.",
+        variant: "destructive",
+      });
+      hasError = true;
+    }
+    if (!isAuthorized) {
+      setJobError(true);
+      toast({
+        title: "Authorization Required",
+        description: "You must confirm authorization.",
+        variant: "destructive",
+      });
+      hasError = true;
+    }
+
+    // 2. Block if Slug has errors
+    if (slugError) {
+      toast({
+        title: "Invalid Format",
+        description: "Please fix the URL Slug errors.",
+        variant: "destructive",
+      });
+      hasError = true;
+    }
+
+    if (hasError) return;
 
     setActionLoading(true);
     try {
@@ -311,9 +387,19 @@ export default function DeveloperConsole() {
                   id="slug"
                   placeholder="acme-corp"
                   value={newTenantSlug}
-                  onChange={(e) => setNewTenantSlug(e.target.value)}
+                  onChange={handleSlugChange}
                   className="font-mono text-sm"
                 />
+                {slugError && (
+                  <p className="text-[11px] text-destructive font-medium animate-in slide-in-from-top-1">
+                    {slugError}
+                  </p>
+                )}
+                {!slugError && (
+                  <p className="text-[10px] text-muted-foreground">
+                    This will be used for your API endpoints.
+                  </p>
+                )}
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="job">
@@ -323,14 +409,25 @@ export default function DeveloperConsole() {
                   id="job"
                   placeholder="e.g. CTO, Lead Developer"
                   value={jobTitle}
-                  onChange={(e) => setJobTitle(e.target.value)}
+                  onChange={(e) => {
+                    setJobTitle(e.target.value);
+                    if (jobError) setJobError(false); // Clear error on type
+                  }}
+                  className={
+                    jobError
+                      ? "border-destructive focus-visible:ring-destructive"
+                      : ""
+                  } // Border turns red
                 />
               </div>
               <div className="flex items-start gap-3 pt-2 bg-muted/50 p-3 rounded-md border border-border/50">
                 <Checkbox
                   id="auth"
                   checked={isAuthorized}
-                  onCheckedChange={(c) => setIsAuthorized(c as boolean)}
+                  onCheckedChange={(c) => {
+                    setIsAuthorized(c as boolean);
+                    if (authError && c) setAuthError(false);
+                  }}
                   className="mt-1"
                 />
                 <Label
@@ -350,9 +447,7 @@ export default function DeveloperConsole() {
             <DialogFooter>
               <Button
                 onClick={handleCreateTenant}
-                disabled={
-                  actionLoading || !newTenantName || !jobTitle || !isAuthorized
-                }
+                disabled={actionLoading}
                 className="w-full"
               >
                 {actionLoading ? (
