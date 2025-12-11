@@ -6,7 +6,7 @@ interface InteractionState {
 
   initializeInteraction: (
     postId: string,
-    data: { reaction: string | null; hasVoted: boolean }
+    data: { reaction: 'AGREE' | 'DISAGREE' | null; hasVoted: boolean }
   ) => void;
   hydrate: (newMap: InteractionMap) => void;
   setReaction: (postId: string, reaction: "AGREE" | "DISAGREE" | null) => void;
@@ -32,7 +32,7 @@ export const useInteractionStore = create<InteractionState>((set) => ({
       },
     })),
 
-  initializeInteraction: (postId, data) =>
+initializeInteraction: (postId, data) =>
     set((state) => ({
       interactions: {
         ...state.interactions,
