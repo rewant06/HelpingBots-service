@@ -37,7 +37,7 @@ export default function DashboardPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [tenantData, logsData, healthData] = await Promise.all([
+        const [tenantData, logsData, healthData] = await .all([
           getMyTenants(),
           getActivityLogs(1, 5),
           api

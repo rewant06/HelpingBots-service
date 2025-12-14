@@ -64,21 +64,10 @@ export default function LoginPage() {
             Welcome Back
           </h1>
           <p className="text-muted-foreground mb-6">Sign in to your account</p>
-          
-          
-          
-          
-          
-          
-          
-          
-          
-          
-          
-          
+
           {apiError && (
-            <div className="mb-4 p-3 rounded-md bg-destructive/10 border border-destructive/20 text-destructive text-sm text-center font-medium animate-in fade-in-50">
-              {apiError}
+            <div className="mb-4 p-3 rounded-md bg-red-100 border border-red-500 text-red-700 text-sm text-center font-bold">
+              ERROR: {apiError}
             </div>
           )}
 

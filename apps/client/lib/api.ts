@@ -22,7 +22,7 @@ api.interceptors.request.use(
   },
   (error) => {
     logger.error("Axios request interceptor error", error);
-    return Promise.reject(error);
+    return .reject(error);
   }
 );
 
@@ -52,7 +52,7 @@ api.interceptors.response.use(
   async (error: unknown) => {
     if (!isAxiosError(error)) {
       logger.error("Non-Axios error in response interceptor", error);
-      return Promise.reject(error);
+      return .reject(error);
     }
     const originalRequest = error.config;
 
@@ -63,7 +63,7 @@ api.interceptors.response.use(
     ) {
       if (isRefreshing) {
         logger.log("Waiting for token refresh...");
-        return new Promise((resolve, reject) => {
+        return new ((resolve, reject) => {
           failedQueue.push({ resolve, reject });
         })
           .then((token) => {
@@ -71,7 +71,7 @@ api.interceptors.response.use(
             return api(originalRequest);
           })
           .catch((error) => {
-            return Promise.reject(error);
+            return .reject(error);
           });
       }
 
@@ -94,12 +94,12 @@ api.interceptors.response.use(
         processQueue(refreshError, null);
         useAuthStore.getState().clearAuth();
         if (typeof window !== "undefined") window.location.href = "/login";
-        return Promise.reject(refreshError);
+        return .reject(refreshError);
       } finally {
         isRefreshing = false;
       }
     }
-    return Promise.reject(error);
+    return .reject(error);
   }
 );
 
