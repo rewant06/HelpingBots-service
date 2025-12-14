@@ -21,8 +21,7 @@ export class MailService {
       },
     });
     this.from = this.configService.getOrThrow<string>('MAIL_FROM');
-    this.frontendUrl =
-      this.configService.getOrThrow<string>('FRONTEND_URL');
+    this.frontendUrl = this.configService.getOrThrow<string>('FRONTEND_URL');
   }
 
   async sendPasswordReset(email: string, token: string) {

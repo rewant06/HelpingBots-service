@@ -31,7 +31,7 @@ export interface AuthenticatedRequest extends Request {
 export class ApiKeyGuard implements CanActivate {
   private readonly logger = new Logger(ApiKeyGuard.name);
   private readonly IAM_URL =
-    process.env.IAM_SERVICE_URL || 'http://iam-service:5000';
+    process.env.IAM_SERVICE_URL || 'http://iam-service:8000';
 
   constructor(
     private readonly httpService: HttpService,
