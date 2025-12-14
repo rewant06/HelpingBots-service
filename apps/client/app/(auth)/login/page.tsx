@@ -44,8 +44,8 @@ export default function LoginPage() {
       if (isAxiosError(error)) {
         errorMsg = error.response?.data?.message || error.message;
         if (error.response?.status === 403) {
-           toast.error("Email not verified. Please check your inbox.");
-           return; 
+          toast.error("Email not verified. Please check your inbox.");
+          return;
         }
       } else if (error instanceof Error) {
         errorMsg = error.message;
@@ -65,6 +65,11 @@ export default function LoginPage() {
           </h1>
           <p className="text-muted-foreground mb-6">Sign in to your account</p>
 
+          {apiError && (
+            <div className="mb-4 p-3 rounded-md bg-destructive/10 border border-destructive/20 text-destructive text-sm text-center font-medium animate-in fade-in-50">
+              {apiError}
+            </div>
+          )}
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
