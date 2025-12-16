@@ -1,18 +1,17 @@
 from app.graph.state import AgentState
+from app.services.vector_store import search_documents
 
 async def retrieve(state: AgentState) -> dict:
     """
-    Mock Retrieval Node:
-    In the future, This will query Supabase pgvector.
+    The Retrieval Node:
+    Queries Supabase pgvector for relevant medical guidelines.
     """
     
-    print("---NODE: RETRIEVING DOCUMENTS---")
+    print("---NODE: RETRIEVING DOCUMENTS (SUPABASE)---")
+    question = state["question"]
     
-    # mock data representing a vector search result
+    documents = await search_documents(question, limit=3)
+    print(f"---RETRIEVED {len(documents)} DOCS---")
     
-    mock_docs = [
-        "Guideline 1: If patient has chest pain> 10 mins, triage Red.",
-        "Guideline 2: Mild fever < 38C is usually Green triage"
-    ]
     
-    return {"documents": mock_docs}
+    return {"documents": documents}
