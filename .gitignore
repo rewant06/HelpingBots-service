@@ -75,3 +75,12 @@ certs-test
 TEST.md
 ProductionPrisma.md
 Production_Prisma.md
+apps/ai-doctor/Execution-Plan.md
+
+
+apps/ai-doctor/app/api/v1/__pycache__
+apps/ai-doctor/app/api/__pycache__
+apps/ai-doctor/app/graph/__pycache__
+apps/ai-doctor/app/graph/nodes/__pycache__
+apps/ai-doctor/app/services/__pycache__
+apps/ai-doctor/__pycache__
