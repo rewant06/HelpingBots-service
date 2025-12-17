@@ -242,3 +242,23 @@ model ActivityLog {
   @@index([entityType, entityId])
   @@index([actionType])
 }
+
+model ApiMetric {
+  timestamp  DateTime
+  tenantId   String   @default("public") // Use "public" instead of NULL for better indexing
+  route      String
+  method     String
+  statusCode Int
+
+  requestCount  Int    @default(0)
+  totalDuration BigInt @default(0) // Sum of all latencies (ms)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // 3. COMPOSITE PRIMARY KEY
+  @@id([timestamp, tenantId, route, method, statusCode])
+  // 4. INDEXES for Dashboard Filtering
+  @@index([timestamp])
+  @@index([tenantId, timestamp]) // "Show me Tenant X's usage over time"
+}

@@ -12,7 +12,7 @@ export class CreateLocalUserDto {
 
   @IsString()
   @MinLength(8)
-  @MaxLength(12)
+  @MaxLength(128)
   password: string;
 
   @IsOptional()
