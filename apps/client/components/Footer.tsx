@@ -78,13 +78,13 @@ return null;
           <div className="sm:col-span-2 lg:col-span-1">
             <Link href="/" className="flex items-center gap-3 mb-4 group">
               <div className="relative h-10 w-10 md:h-12 md:w-12 transition-transform group-hover:scale-110">
-                <Image 
-                  src="/logo.png" 
-                  alt="HelpingBots Logo" 
-                  fill 
-                  sizes="48px"
-                  className="object-contain" 
-                />
+              <Image
+                src="/android-chrome-192x192.png"
+                alt="HelpingBots Logo"
+                fill
+                sizes="(max-width: 768px) 40px, 48px"
+                className="object-contain"
+              />
               </div>
               <span className="text-xl md:text-2xl font-bold text-gradient">
                 HelpingBots
