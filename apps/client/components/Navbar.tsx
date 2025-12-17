@@ -63,10 +63,10 @@ export function Navbar() {
           <Link href="/" className="flex items-center gap-3 group" tabIndex={0}>
             <div className="relative h-10 w-10 md:h-12 md:w-12 transition-transform duration-300 group-hover:scale-110">
               <Image
-                src="/logo.png"
+                src="/android-chrome-192x192.png"
                 alt="HelpingBots Logo"
                 fill
-                sizes="48px"
+                sizes="(max-width: 768px) 40px, 48px"
                 className="object-contain"
                 priority
               />
