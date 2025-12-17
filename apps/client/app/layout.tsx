@@ -9,13 +9,31 @@ export const metadata: Metadata = {
   metadataBase: new URL('https://helpingbots.in'),
   title: {
     default: "HelpingBots | Production-Ready Software & Anonymous Social Platform",
-    template: "%s | HelpingBots",
+    template: "%s | Helping Bots",
   },
   description: "HelpingBots offers premium software development services and hosts VEIL, the anonymous truth protocol. Secure, scalable, and built for the future.",
-  keywords: ["Software Development", "Anonymous Social Network", "VEIL Protocol", "Next.js Agency", "HelpingBots", "Secure Feedback"],
+  
+  // UPDATED KEYWORDS (Expanded for Typos & Singulars)
+  keywords: [
+    "Helping Bots",       
+    "Helping bots",         
+    "HelpingBots",        
+    "Helping Bot",           
+    "Helping bot",          
+    "HelpingBot",            
+    "Software Development", 
+    "Anonymous Social Network", 
+    "VEIL Protocol", 
+    "Next.js Agency", 
+    "HelpingBots Agency",    
+    "Secure Feedback"
+  ],
+  
   authors: [{ name: "Rewant Raj" }],
   creator: "Rewant Raj",
   publisher: "HelpingBots",
+  
+  // SOCIAL SHARING (OpenGraph)
   openGraph: {
     title: "HelpingBots - The Future of Digital Interaction",
     description: "Production-ready software services and anonymous social interactions powered by VEIL.",
@@ -25,24 +43,43 @@ export const metadata: Metadata = {
     type: "website",
     images: [
       {
-        url: "/logo.png", // Ensure you add an image at /public/og-image.png for social cards
-        width: 800,
-        height: 800,
-        alt: "HelpingBots Platform",
+        url: "/android-chrome-512x512.png",
+        width: 512,
+        height: 512,
+        alt: "Helping Bots Platform",
       },
     ],
   },
+  
+  // TWITTER CARD
   twitter: {
     card: "summary",
     title: "HelpingBots",
     description: "Production-ready software & VEIL Protocol.",
-    images: ["/logo.png"],
+    images: ["/android-chrome-512x512.png"],
   },
+
+  // ICONS & MANIFEST
   icons: {
-    icon: "/logo.png",
-    shortcut: "/logo.png",
-    apple: "/logo.png",
+    icon: [
+      { url: '/favicon.ico', sizes: 'any' },
+      { url: '/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
+    ],
+    apple: [
+      { url: '/apple-touch-icon.png', sizes: '180x180' },
+    ],
+    other: [
+      {
+        rel: 'apple-touch-icon',
+        url: '/apple-touch-icon.png',
+      },
+    ],
   },
+  
+  manifest: '/site.webmanifest',
+
+  // ROBOTS
   robots: {
     index: true,
     follow: true,
