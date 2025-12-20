@@ -33,11 +33,6 @@ enum ActivityLogStatus {
   PENDING
 }
 
-enum TenantStatus {
-  ACTIVE
-  SUSPENDED // Billing failed or ToS violation
-  ARCHIVED // Soft deleted
-}
 
 enum TenantType {
   ORGANIZATION // B2B: Has many users, buys enterprise plans
@@ -57,11 +52,12 @@ enum SubscriptionStatus {
   EXPIRED
 }
 
-enum UserStatus {
+enum Status {
   ACTIVE
   INACTIVE
   SUSPENDED // Banned by Platform Admin
   DELETED // Soft Deleted (GDPR retention)
+  ARCHIVED
 }
 
 model User {
@@ -70,7 +66,7 @@ model User {
   name            String?
   hashedPassword  String?
   isEmailVerified Boolean    @default(false)
-  status          UserStatus @default(ACTIVE)
+  status          Status     @default(ACTIVE)
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 
@@ -131,7 +127,7 @@ model Tenant {
   slug String @unique // e.g., "tech-corp" (URL friendly)
 
   type   TenantType   @default(ORGANIZATION)
-  status TenantStatus @default(ACTIVE)
+  status Status @default(ACTIVE)
 
   // The Platform Admin who pays the bill
   ownerId String
@@ -191,6 +187,8 @@ model ApiKey {
   lastUsedAt DateTime?
   expiresAt  DateTime? // For temporary keys
 
+  status Status @default(ACTIVE)
+
   tenantId String
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -205,7 +203,7 @@ model ShadowUser {
 
   // The ID provided by the External Client (e.g., "alice_123")
   externalId String
-
+  status     Status   @default(ACTIVE)
   // Metadata sent by client (snapshot)
   // e.g., { "role": "manager", "department": "engineering" }
   metadata Json?
@@ -256,9 +254,5 @@ model ApiMetric {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // 3. COMPOSITE PRIMARY KEY
-  @@id([timestamp, tenantId, route, method, statusCode])
-  // 4. INDEXES for Dashboard Filtering
-  @@index([timestamp])
-  @@index([tenantId, timestamp]) // "Show me Tenant X's usage over time"
+  @@id([tenantId, timestamp, route, method, statusCode])
 }

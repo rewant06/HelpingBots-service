@@ -34,7 +34,7 @@ import type { Request } from 'express';
 import { PasswordWorkerService } from '../password-worker/password-worker.service';
 
 const MAX_ATTEMPTS = 5;
-const LOCKOUT_TIME_SECONDS = 3600;
+const LOCKOUT_TIME_SECONDS = 36;
 
 export interface AuthTokens {
   accessToken: string;
@@ -223,7 +223,13 @@ export class AuthService {
       isValid = false;
     }
 
-    if (!user || !user.hashedPassword || !isValid) {
+    if (
+      !user ||
+      !user.hashedPassword ||
+      !isValid ||
+      user.status === 'DELETED' ||
+      user.status === 'SUSPENDED'
+    ) {
       await this.activityLogService.createLog(
         ActivityLogActionType.EXECUTE,
         ActivityLogStatus.FAILED,
@@ -274,6 +280,7 @@ export class AuthService {
     );
     const payload = {
       sub: user.id,
+      email: user.email,
       name: user.name,
       jti: randomBytes(16).toString('hex'),
       roles: user.roles.map((role) => role.name),
