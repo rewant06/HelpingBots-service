@@ -5,3 +5,4 @@ __pycache__
 .env
 poetry.lock
 apps/ai-doctor/poetry.lock
+documents

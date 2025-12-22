@@ -8,7 +8,7 @@ load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
 
 if not api_key:
-    print("❌ Error: GEMINI_API_KEY not found in .env")
+    print(" Error: GEMINI_API_KEY not found in .env")
     exit(1)
 
 # 2. Configure the Client
@@ -20,11 +20,11 @@ try:
     count = 0
     for m in genai.list_models():
         if "generateContent" in m.supported_generation_methods:
-            print(f"✅ Found: {m.name}")
+            print(f" Found: {m.name}")
             count += 1
     
     if count == 0:
-        print("⚠️ No generation models found. Check if your API Key has 'Generative Language API' enabled in Google Cloud Console.")
+        print(" No generation models found. Check if your API Key has 'Generative Language API' enabled in Google Cloud Console.")
         
 except Exception as e:
-    print(f"❌ Error connecting to Google: {e}")
+    print(f" Error connecting to Google: {e}")

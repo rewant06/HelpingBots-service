@@ -38,8 +38,7 @@ const ServicesPage = () => {
             </h1>
 
             <p className="text-xl md:text-2xl text-muted-foreground leading-relaxed mb-8">
-              From the first line of code to the final pixel, [Image of software
-              development lifecycle] we provide a comprehensive suite of affordable
+              From the first line of code to the final pixel, we provide a comprehensive suite of affordable
               services designed to scale with your vision.
             </p>
 
