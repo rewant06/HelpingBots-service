@@ -65,6 +65,7 @@ model User {
   email           String     @unique
   name            String?
   hashedPassword  String?
+  image           String?
   isEmailVerified Boolean    @default(false)
   status          Status     @default(ACTIVE)
   createdAt       DateTime   @default(now())

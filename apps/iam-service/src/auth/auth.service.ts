@@ -66,6 +66,14 @@ export class AuthService {
     @InjectQueue('email') private emailQueue: Queue,
   ) {}
 
+  // async validateGoogleUser(googleUser: {
+  //   email: string;
+  //   name: string;
+  //   emailVerified: boolean;
+  // }) {
+  //   const email = 
+  // }
+
   private async _createEmailVerificationToken(
     user: UserPayload,
   ): Promise<string> {
