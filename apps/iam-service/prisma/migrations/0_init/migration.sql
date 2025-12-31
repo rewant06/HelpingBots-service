@@ -14,19 +14,16 @@ CREATE TYPE "public"."ActivityLogStatus" AS ENUM ('SUCCESS', 'FAILED', 'PENDING'
 CREATE TYPE "public"."PermissionAction" AS ENUM ('CREATE', 'READ', 'UPDATE', 'DELETE', 'MANAGE');
 
 -- CreateEnum
+CREATE TYPE "public"."Status" AS ENUM ('ACTIVE', 'INACTIVE', 'SUSPENDED', 'DELETED', 'ARCHIVED');
+
+-- CreateEnum
 CREATE TYPE "public"."SubscriptionStatus" AS ENUM ('ACTIVE', 'PAST_DUE', 'CANCELED', 'EXPIRED');
 
 -- CreateEnum
 CREATE TYPE "public"."SubscriptionTier" AS ENUM ('FREE', 'PRO', 'ENTERPRISE');
 
 -- CreateEnum
-CREATE TYPE "public"."TenantStatus" AS ENUM ('ACTIVE', 'SUSPENDED', 'ARCHIVED');
-
--- CreateEnum
 CREATE TYPE "public"."TenantType" AS ENUM ('ORGANIZATION', 'PERSONAL');
-
--- CreateEnum
-CREATE TYPE "public"."UserStatus" AS ENUM ('ACTIVE', 'INACTIVE', 'SUSPENDED', 'DELETED');
 
 -- CreateTable
 CREATE TABLE "public"."ActivityLog" (
@@ -59,6 +56,7 @@ CREATE TABLE "public"."ApiKey" (
     "tenantId" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
+    "status" "public"."Status" NOT NULL DEFAULT 'ACTIVE',
 
     CONSTRAINT "ApiKey_pkey" PRIMARY KEY ("id")
 );
@@ -75,7 +73,7 @@ CREATE TABLE "public"."ApiMetric" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "ApiMetric_pkey" PRIMARY KEY ("timestamp","tenantId","route","method","statusCode")
+    CONSTRAINT "ApiMetric_pkey" PRIMARY KEY ("tenantId","timestamp","route","method","statusCode")
 );
 
 -- CreateTable
@@ -124,6 +122,7 @@ CREATE TABLE "public"."ShadowUser" (
     "tenantId" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "lastActive" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "status" "public"."Status" NOT NULL DEFAULT 'ACTIVE',
 
     CONSTRAINT "ShadowUser_pkey" PRIMARY KEY ("id")
 );
@@ -150,10 +149,10 @@ CREATE TABLE "public"."Tenant" (
     "name" TEXT NOT NULL,
     "slug" TEXT NOT NULL,
     "type" "public"."TenantType" NOT NULL DEFAULT 'ORGANIZATION',
-    "status" "public"."TenantStatus" NOT NULL DEFAULT 'ACTIVE',
     "ownerId" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
+    "status" "public"."Status" NOT NULL DEFAULT 'ACTIVE',
 
     CONSTRAINT "Tenant_pkey" PRIMARY KEY ("id")
 );
@@ -165,9 +164,10 @@ CREATE TABLE "public"."User" (
     "name" TEXT,
     "hashedPassword" TEXT,
     "isEmailVerified" BOOLEAN NOT NULL DEFAULT false,
-    "status" "public"."UserStatus" NOT NULL DEFAULT 'ACTIVE',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
+    "image" TEXT,
+    "status" "public"."Status" NOT NULL DEFAULT 'ACTIVE',
 
     CONSTRAINT "User_pkey" PRIMARY KEY ("id")
 );
@@ -202,12 +202,6 @@ CREATE UNIQUE INDEX "ApiKey_keyHash_key" ON "public"."ApiKey"("keyHash" ASC);
 
 -- CreateIndex
 CREATE INDEX "ApiKey_tenantId_idx" ON "public"."ApiKey"("tenantId" ASC);
-
--- CreateIndex
-CREATE INDEX "ApiMetric_tenantId_timestamp_idx" ON "public"."ApiMetric"("tenantId" ASC, "timestamp" ASC);
-
--- CreateIndex
-CREATE INDEX "ApiMetric_timestamp_idx" ON "public"."ApiMetric"("timestamp" ASC);
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Permission_action_subject_key" ON "public"."Permission"("action" ASC, "subject" ASC);

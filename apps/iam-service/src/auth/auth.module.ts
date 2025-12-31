@@ -12,6 +12,7 @@ import { PermissionsGuard } from './rbac/permissions.guard';
 import { JwtAuthGuard } from './guard/jwt-auth.guard';
 import { QueuesModule } from 'src/queues/queues.module';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { TenantsMembershipService } from 'src/tenants/tenants-membership.service';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
     JwtStrategy,
     PermissionsGuard,
     JwtAuthGuard,
+    TenantsMembershipService,
   ],
   controllers: [AuthController],
   exports: [AuthService, RbacService, PermissionsGuard, JwtAuthGuard],

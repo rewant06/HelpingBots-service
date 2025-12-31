@@ -32,6 +32,7 @@ import {
 } from '@prisma/iam-client';
 import type { Request } from 'express';
 import { PasswordWorkerService } from '../password-worker/password-worker.service';
+import { TenantsMembershipService } from 'src/tenants/tenants-membership.service';
 
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_TIME_SECONDS = 36;
@@ -63,6 +64,7 @@ export class AuthService {
     private httpContext: HttpContextService,
     private rbacService: RbacService,
     private passwordWorker: PasswordWorkerService,
+    private tenantsMembershipService: TenantsMembershipService,
     @InjectQueue('email') private emailQueue: Queue,
   ) {}
 
@@ -71,7 +73,7 @@ export class AuthService {
   //   name: string;
   //   emailVerified: boolean;
   // }) {
-  //   const email = 
+  //   const email =
   // }
 
   private async _createEmailVerificationToken(
@@ -286,6 +288,29 @@ export class AuthService {
     const userPermissions = await this.rbacService.getPermissionsForUser(
       user.id,
     );
+
+    const issuer = process.env.JWT_ISSUER;
+    if (!issuer) {
+      throw new InternalServerErrorException('JWT_ISSUER not configured');
+    }
+
+    const tenant_ids = await this.tenantsMembershipService.getTenantIds(
+      user.id,
+    );
+
+    const tenant_roles_by_tenant =
+      await this.tenantsMembershipService.getTenantRolesByTenant(user.id);
+
+    const defaultActiveTenantId =
+      await this.tenantsMembershipService.getDefaultActiveTenantId(user.id);
+
+    const active_tenant_id =
+      defaultActiveTenantId && tenant_ids.includes(defaultActiveTenantId)
+        ? defaultActiveTenantId
+        : tenant_ids.length > 0
+          ? tenant_ids[0]
+          : null;
+
     const payload = {
       sub: user.id,
       email: user.email,
@@ -295,10 +320,16 @@ export class AuthService {
       permissions: userPermissions.map(
         (permission) => `${permission.action}:${permission.subject}`,
       ),
+      tenant_ids,
+      active_tenant_id,
+      tenant_roles_by_tenant,
     };
 
     try {
-      return await this.jwtService.signAsync(payload);
+      return await this.jwtService.signAsync(payload, {
+        issuer,
+        audience: ['drreach-api'],
+      });
     } catch (error) {
       this.logger.error('Failed signing access token', error);
       throw new InternalServerErrorException('Failed to sign access token');

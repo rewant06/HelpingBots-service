@@ -12,7 +12,10 @@ export interface JwtPayload {
   email: string;
   name?: string;
   jti: string;
-  roles: string[];
+  roles?: string[];
+  tenant_ids?: string[];
+  active_tenant_id?: string;
+  tenant_roles_by_tenant?: Record<string, string[]>;
 }
 
 @Injectable()
@@ -52,6 +55,13 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       email: payload.email,
       name: payload.name || null,
       roles: roles,
+      tenant_ids: Array.isArray(payload.tenant_ids) ? payload.tenant_ids : [],
+      active_tenant_id: payload.active_tenant_id ?? null,
+      tenant_roles_by_tenant:
+        payload.tenant_roles_by_tenant &&
+        typeof payload.tenant_roles_by_tenant === 'object'
+          ? payload.tenant_roles_by_tenant
+          : {},
     };
 
     this.httpContext.setActor(user);
