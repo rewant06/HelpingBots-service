@@ -58,6 +58,8 @@ enum Status {
   SUSPENDED // Banned by Platform Admin
   DELETED // Soft Deleted (GDPR retention)
   ARCHIVED
+  RETIRED
+  REVOKED
 }
 
 model User {
@@ -122,6 +124,25 @@ model RefreshToken {
   lastUsedAt DateTime?
 
   @@index([userId])
+}
+
+model JwtSigningKey {
+  id        String   @id @default(cuid())
+  kid       String   @unique // Key ID
+  
+  publicJwk  Json
+  privateKeyEnc String
+
+  status     Status @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  activatedAt DateTime @default(now())
+  retiredAt  DateTime?
+
+  publishUntil DateTime? 
+
+  @@index([status])
+  @@index([publishUntil])
 }
 
 model Tenant {
@@ -293,3 +314,5 @@ model ApiMetric {
 
   @@id([tenantId, timestamp, route, method, statusCode])
 }
+
+
