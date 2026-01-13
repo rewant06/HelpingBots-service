@@ -58,6 +58,11 @@ enum Status {
   SUSPENDED // Banned by Platform Admin
   DELETED // Soft Deleted (GDPR retention)
   ARCHIVED
+
+}
+
+enum JwtSigningKeyStatus {
+  ACTIVE
   RETIRED
   REVOKED
 }
@@ -133,7 +138,7 @@ model JwtSigningKey {
   publicJwk  Json
   privateKeyEnc String
 
-  status     Status @default(ACTIVE)
+  status     JwtSigningKeyStatus @default(ACTIVE)
 
   createdAt DateTime @default(now())
   activatedAt DateTime @default(now())
