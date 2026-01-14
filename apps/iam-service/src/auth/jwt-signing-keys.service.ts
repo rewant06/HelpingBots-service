@@ -70,7 +70,7 @@ export class JwtSigningKeysService {
     } catch {}
 
     this.logger.log(`Rotated JWT signing key. New ACTIVE kid=${kid}`);
-    return (newKid: kid);
+    return { newKid: kid };
   }
 
   async ensureActiveKey(): Promise<void> {

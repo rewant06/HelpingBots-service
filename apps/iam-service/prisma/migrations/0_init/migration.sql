@@ -158,6 +158,28 @@ CREATE TABLE "public"."Tenant" (
 );
 
 -- CreateTable
+CREATE TABLE "public"."TenantMember" (
+    "id" TEXT NOT NULL,
+    "tenantId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "status" "public"."Status" NOT NULL DEFAULT 'ACTIVE',
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "TenantMember_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "public"."TenantMemberRole" (
+    "id" TEXT NOT NULL,
+    "tenantMemberId" TEXT NOT NULL,
+    "roleId" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "TenantMemberRole_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "public"."User" (
     "id" TEXT NOT NULL,
     "email" TEXT NOT NULL,
@@ -231,6 +253,21 @@ CREATE INDEX "Tenant_slug_idx" ON "public"."Tenant"("slug" ASC);
 CREATE UNIQUE INDEX "Tenant_slug_key" ON "public"."Tenant"("slug" ASC);
 
 -- CreateIndex
+CREATE INDEX "TenantMember_tenantId_idx" ON "public"."TenantMember"("tenantId" ASC);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "TenantMember_tenantId_userId_key" ON "public"."TenantMember"("tenantId" ASC, "userId" ASC);
+
+-- CreateIndex
+CREATE INDEX "TenantMember_userId_idx" ON "public"."TenantMember"("userId" ASC);
+
+-- CreateIndex
+CREATE INDEX "TenantMemberRole_roleId_idx" ON "public"."TenantMemberRole"("roleId" ASC);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "TenantMemberRole_tenantMemberId_roleId_key" ON "public"."TenantMemberRole"("tenantMemberId" ASC, "roleId" ASC);
+
+-- CreateIndex
 CREATE UNIQUE INDEX "User_email_key" ON "public"."User"("email" ASC);
 
 -- CreateIndex
@@ -256,6 +293,18 @@ ALTER TABLE "public"."Subscription" ADD CONSTRAINT "Subscription_tenantId_fkey" 
 
 -- AddForeignKey
 ALTER TABLE "public"."Tenant" ADD CONSTRAINT "Tenant_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES "public"."User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."TenantMember" ADD CONSTRAINT "TenantMember_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "public"."Tenant"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."TenantMember" ADD CONSTRAINT "TenantMember_userId_fkey" FOREIGN KEY ("userId") REFERENCES "public"."User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."TenantMemberRole" ADD CONSTRAINT "TenantMemberRole_roleId_fkey" FOREIGN KEY ("roleId") REFERENCES "public"."Role"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "public"."TenantMemberRole" ADD CONSTRAINT "TenantMemberRole_tenantMemberId_fkey" FOREIGN KEY ("tenantMemberId") REFERENCES "public"."TenantMember"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "public"."_PermissionToRole" ADD CONSTRAINT "_PermissionToRole_A_fkey" FOREIGN KEY ("A") REFERENCES "public"."Permission"("id") ON DELETE CASCADE ON UPDATE CASCADE;
