@@ -1,16 +1,17 @@
-# apps/ai-doctor/main.py
 from __future__ import annotations
-import os
 
+import os
 from uuid import UUID, uuid4
 
 from fastapi import FastAPI, HTTPException, Request
+from pydantic import BaseModel
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
 
+FEATURE_DEV_AUTH_ENV = "FEATURE_DEV_AUTH"
 
 class CorrelationIdMiddleware(BaseHTTPMiddleware):
     header_name = "X-Correlation-Id"
@@ -84,6 +85,45 @@ async def healthz() -> JSONResponse:
 @app.get("/readyz")
 async def readyz() -> JSONResponse:
     return JSONResponse(content={"status": "ok"})
+
+class VersionCheckResponse(BaseModel):
+    sub: str
+    active_tenant_id: str
+    uv_current: int
+    mv_current: int 
+    user_status: str
+    membership_status: str
+    
+    
+def _feature_enabled(name: str) -> bool:
+    return os.getenv(name, "false").strip().lower() == "true"
+
+
+def _get_dev_actor_from_headers(request: Request) -> tuple[str, str]:
+    user_id = request.headers.get("X-Debug-User-Id")
+    tenant_id = request.headers.get("X-Debug-Tenant-Id")
+    if not user_id or not tenant_id:
+        raise HTTPException(status_code=401, detail="Missing X-Debug-User-Id or X-Debug-Tenant-Id")
+    return user_id, tenant_id
+
+@app.get("/authz/version")
+async def authz_version(request: Request) -> JSONResponse:
+    # phase 1: Dev auth only
+    if not _feature_enabled(FEATURE_DEV_AUTH_ENV):
+        raise HTTPException(status_code=501, detail="DEV_AUTH disabled; JWT/IAM authz not yet configured")
+    
+    sub, active_tenant_id = _get_dev_actor_from_headers(request)
+    
+    resp = VersionCheckResponse(
+        sub=sub,
+        active_tenant_id=active_tenant_id,
+        uv_current=0,
+        mv_current=0,
+        user_status="active",
+        membership_status="active",
+    )
+    return JSONResponse(content=resp.model_dump())
+
 
 @app.get("/v1/meta")
 async def meta() -> JSONResponse: 
