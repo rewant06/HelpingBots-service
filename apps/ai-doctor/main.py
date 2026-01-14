@@ -1,12 +1,13 @@
 # apps/ai-doctor/main.py
 from __future__ import annotations
+import os
 
 from uuid import UUID, uuid4
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from starlette.exceptions import HeepException as StarletteHTTPException
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
 
@@ -24,14 +25,12 @@ class CorrelationIdMiddleware(BaseHTTPMiddleware):
                 correlation_id = None
         if not correlation_id:
             correlation_id = str(uuid4())
-
         request.state.correlation_id = correlation_id
         response = await call_next(request)
         response.headers[self.header_name] = correlation_id
         return response
-def _correlation_id(requrest: Request) -> str | None:
+def _correlation_id(request: Request) -> str | None:
     return getattr(request.state, "correlation_id", None)
-
 
 
 app = FastAPI(
@@ -47,13 +46,24 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
         status_code=exc.status_code,
         content={
             "error": "http_error",
-            "message": exc.detail if isinstance(exc.detail, str) else "Request Failed",
+            "message": exc.detail if isinstance(exc.detail, str) else "Request failed",
             "correlation_id": _correlation_id(request),
             "details": exc.detail if isinstance(exc.detail, dict) else None,
         },
     )
     
 @app.exception_handler(StarletteHTTPException)
+async def starlette_http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": "http_error",
+            "message": exc.detail if isinstance(exc.detail, str) else "Request failed",
+            "correlation_id": _correlation_id(request),
+            "details": None,
+        },
+    )
+    
     
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
@@ -74,3 +84,13 @@ async def healthz() -> JSONResponse:
 @app.get("/readyz")
 async def readyz() -> JSONResponse:
     return JSONResponse(content={"status": "ok"})
+
+@app.get("/v1/meta")
+async def meta() -> JSONResponse: 
+    return JSONResponse(
+        content={
+            "version": os.getenv("SERICE_VERSION", "1.0.0"),
+            "environment": os.getenv("ENV", "dev"),
+            "features": {"dev_auth": os.getenv("FEATURE_DEV_AUTH", "false").lower() == "true", "jwt_auth": os.getenv("FEATURE_DEV_AUTH", "false").lower() == "true"}
+        }
+    )
