@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import json
 import os
+import time
+from contextlib import asynccontextmanager
+from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 import asyncpg
@@ -10,11 +14,250 @@ from pydantic import BaseModel, ConfigDict
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.datastructures import Headers
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from starlette.responses import Response
+
+_SENSITIVE_LOG_KEYS = {
+    "password",
+    "passwd",
+    "token",
+    "access_token",
+    "refresh_token",
+    "authorization",
+    "api_key",
+    "apikey",
+    "database_url",
+    "dsn",
+}
+
+class RedactJsonFilter(logging.Filter):
+    def __init__(self, keys: set[str]) -> None:
+        super().__init__()
+        self.keys = {k.lower() for k in keys}
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if not isinstance(record.msg, str):
+            return True
+        try:
+            data = json.loads(record.msg)
+        except Exception:
+            return True
+        if not isinstance(data, dict):
+            return True
+        changed = False
+        for k in list(data.keys()):
+            if str(k).lower() in self.keys:
+                data[k] = "[REDACTED]"
+                changed = True
+        if changed:
+            record.msg = json.dumps(data, separators=(",", ":"))
+            record.args = ()
+        return True
+
+def _get_request_logger() -> logging.Logger:
+    logger = logging.getLogger("app.request")
+    logger.setLevel(logging.INFO)
+    if not logger.handlers:
+        h = logging.StreamHandler()
+        h.setFormatter(logging.Formatter("%(message)s"))
+        h.addFilter(RedactJsonFilter(_SENSITIVE_LOG_KEYS))
+        logger.addHandler(h)
+        logger.propagate = False
+    return logger
+_get_request_logger()
 
 FEATURE_DEV_AUTH_ENV = "FEATURE_DEV_AUTH"
 FEATURE_JWT_AUTH_ENV = "FEATURE_JWT_AUTH"
+TRUSTED_HOSTS_ENV = "TRUSTED_HOSTS"
+
+MAX_REQUEST_BYTES_ENV = "MAX_REQUEST_BYTES"
+DEFAULT_MAX_REQUEST_BYTES = 1024 * 1024  # 1 MiB
+
+def _max_request_bytes() -> int:
+    raw = os.getenv(MAX_REQUEST_BYTES_ENV)
+    if not raw:
+        return DEFAULT_MAX_REQUEST_BYTES
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return DEFAULT_MAX_REQUEST_BYTES
+    
+def _trusted_hosts() -> list[str] | None:
+    raw = os.getenv(TRUSTED_HOSTS_ENV)
+    if not raw:
+        return None
+    hosts = [h.strip().lower() for h in raw.split(",") if h.strip()]
+    return hosts or None
+
+    
+def _correlation_id_from_scope(scope: Scope) -> str:
+    headers = Headers(raw=scope.get("headers") or [])
+    incoming = headers.get("X-Correlation-Id")
+    if incoming:
+        try: 
+            return str(UUID(incoming))
+        except ValueError:
+            pass
+    return str(uuid4())
+
+def _host_from_scope(scope: Scope) -> str | None:
+    headers = Headers(raw=scope.get("headers") or [])
+    host = headers.get("host")
+    if not host:
+        return None
+    return host.split(":")[0].strip().lower()
+
+class TrustedHostsMiddleware:
+    def __init__(self, app: ASGIApp, allowed_hosts: list[str]) -> None:
+        self.app = app
+        self.allowed_hosts = allowed_hosts
+        
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return 
+        
+        if "*" in self.allowed_hosts:
+            await self.app(scope, receive, send)
+            return
+        
+        host = _host_from_scope(scope)
+        if host and host in self.allowed_hosts:
+            await self.app(scope, receive, send)
+            return
+        
+        correlation_id = _correlation_id_from_scope(scope)
+        resp = JSONResponse(
+            status_code=400,
+            content={
+                "error": "http_error",
+                "message": "Invalid host",
+                "correlation_id": correlation_id,
+                "details": None,
+            },
+            headers={
+                "X-Correlation-Id": correlation_id,
+                "X-Content-Type-Options": "nosniff",
+                "X-Frame-Options": "DENY",
+                "Referrer-Policy": "no-referrer",
+            },
+        )
+        await resp(scope, receive, send)
+        
+class RequestLogMiddleware:
+    header_name = b"x-correlation-id"
+    
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+        self.logger = _get_request_logger()
+        
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        
+        start = time.perf_counter()
+        status_code: int | None = None
+        correlation_id: str | None = None
+        
+        async def send_wrapper(message: Message) -> None:
+            nonlocal status_code, correlation_id
+            if message["type"] == "http.response.start":
+                status_code = int(message["status"])
+                for k, v in message.get("headers", []):
+                    if k.lower() == self.header_name:
+                        correlation_id = v.decode("utf-8", errors="replace")
+                        break
+            await send(message)
+            
+        try: 
+            await self.app(scope, receive, send_wrapper)
+        finally:
+            duration_ms = int((time.perf_counter() - start) * 1000)
+            self.logger.info(
+                json.dumps(
+                    {
+                        "event": "request",
+                        "method": scope.get("method"),
+                        "path": scope.get("path"),
+                        "status_code": status_code,
+                        "duration_ms": duration_ms,
+                        "correlation_id": correlation_id,
+                    },
+                     separators=(",", ":"),
+                )
+            )
+
+class RequestSizeLimitMiddleware:
+    def __init__(self, app:ASGIApp, max_bytes: int) -> None:
+        self.app = app
+        self.max_bytes = max_bytes
+        
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        
+        received = 0
+        correlation_id = _correlation_id_from_scope(scope)
+        headers = Headers(raw=scope.get("headers") or [])
+        
+        content_length = headers.get("content-length")
+        if content_length:
+            try: 
+                if int(content_length) > self.max_bytes:
+                    resp = JSONResponse(
+                        status_code=413,
+                        content={
+                            "error": "http_error",
+                            "message": "Request body too large",
+                            "correlation_id": correlation_id,
+                            "details": None,
+                        },
+                        headers={"X-Correlation-Id": correlation_id},
+                    )
+                    await resp(scope, receive, send)
+                    return
+            except ValueError:
+                pass
+        
+        async def limited_receive() -> Message:
+            nonlocal received
+            message = await receive()
+            if message["type"] != "http.request":
+                return message
+            body = message.get("body", b"") or b""
+            received += len(body)
+            if received > self.max_bytes:
+                raise HTTPException(status_code=413, detail="Request body too large")
+            return message
+        try: 
+            await self.app(scope, limited_receive, send)
+        except HTTPException as exc:
+            if exc.status_code != 413:
+                raise
+            resp = JSONResponse(
+                status_code=413,
+                content={
+                    "error": "http_error",
+                    "message": "Request body too large",
+                    "correlation_id": correlation_id,
+                    "details": None,
+                },
+                headers={"X-Correlation-Id": correlation_id},
+            )
+            await resp(scope, receive, send)
+            
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        return response
+    
 
 class CorrelationIdMiddleware(BaseHTTPMiddleware):
     header_name = "X-Correlation-Id"
@@ -39,40 +282,54 @@ def _correlation_id(request: Request) -> str | None:
 _db_pool: asyncpg.Pool | None = None
 _db_init_failed = False
 
-
-app = FastAPI(
-    title="Dr. Reach API",
-    version="1.0.0",
-)
-
-app.add_middleware(CorrelationIdMiddleware)
-
-@app.on_event("startup")
-async def _startup() -> None:
+@asynccontextmanager
+async def lifespan(_:FastAPI):
     global _db_pool
     global _db_init_failed
+    
     dsn = os.getenv("DATABASE_URL")
     if not dsn:
         _db_pool = None
         _db_init_failed = False
-        return
-    # _db_pool = await asyncpg.create_pool(dsn=dsn, min_size=1, max_size=5)
-    try: 
-        _db_pool = await asyncpg.create_pool(dsn=dsn, min_size=1, max_size=5)
-        _db_init_failed = False
-    except Exception as e:
-        logging.getLogger(__name__).warning("db_pool_init_failed: %s", str(e))
-        _db_pool = None
-        _db_init_failed = True
+    else: 
+        try: 
+            u = urlparse(dsn)
+            _db_pool = await asyncpg.create_pool(
+                host=u.hostname,
+                port=u.port or 5432,
+                user=u.username,
+                password=u.password,
+                database=(u.path or "/postgres").lstrip("/"),
+                min_size=1, 
+                max_size=5,
+                ssl="require",
+                )
+            _db_init_failed = False
+        except Exception as e: 
+            logging.getLogger(__name__).warning("db_pool_init_failed: %s", type(e).__name__)
+            _db_pool = None
+            _db_init_failed = True
+
+    yield
     
-@app.on_event("shutdown")
-async def _shutdown() -> None:
-    global _db_pool
-    global _db_init_failed
     if _db_pool is not None:
         await _db_pool.close()
     _db_pool = None
     _db_init_failed = False
+
+app = FastAPI(
+    title="Dr. Reach API",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+app.add_middleware(CorrelationIdMiddleware)
+app.add_middleware(RequestSizeLimitMiddleware, max_bytes=_max_request_bytes())
+app.add_middleware(SecurityHeadersMiddleware)
+_allowed_hosts = _trusted_hosts()
+if _allowed_hosts:
+    app.add_middleware(TrustedHostsMiddleware, allowed_hosts=_allowed_hosts)
+app.add_middleware(RequestLogMiddleware)
     
     
 @app.exception_handler(HTTPException)
