@@ -17,7 +17,6 @@ import {
 import type { Response, Request } from 'express';
 import { CreateLocalUserDto } from './dto/createUser.dto';
 import { LoginDto } from './dto/loginUser.dto';
-import { UsersService } from 'src/users/users.service';
 import { AuthService } from './auth.service';
 import { parseDeviceInfo } from './device/device.util';
 import { JwtAuthGuard } from './guard/jwt-auth.guard';
@@ -30,14 +29,18 @@ import { ForgotPassword } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 
+function readCookie(req: Request, name: string): string | undefined {
+  const cookies = (req as unknown as { cookies?: Record<string, unknown> })
+    .cookies;
+  const value = cookies?.[name];
+  return typeof value === 'string' ? value : undefined;
+}
+
 const REFRESH_COOKIE_NAME = 'refresh_token';
 
 @Controller('auth')
 export class AuthController {
-  constructor(
-    private usersService: UsersService,
-    private authService: AuthService,
-  ) {}
+  constructor(private authService: AuthService) {}
 
   @Post('register')
   @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }))
@@ -45,7 +48,7 @@ export class AuthController {
     try {
       const newUser = await this.authService.register(dto);
       return { newUser };
-    } catch (err) {
+    } catch (err: unknown) {
       if (err instanceof ConflictException) throw err;
       throw new InternalServerErrorException('Registration failed');
     }
@@ -88,10 +91,9 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const cookie = req.cookies?.[REFRESH_COOKIE_NAME];
-    if (!cookie || typeof cookie !== 'string') {
+    const cookie = readCookie(req, REFRESH_COOKIE_NAME);
+    if (!cookie)
       throw new UnauthorizedException('Refresh token missing or malformed');
-    }
 
     const device = parseDeviceInfo(req);
     // AuthService.refreshTokens should return { accessToken, refreshToken }
@@ -123,16 +125,16 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const refreshToken = req.cookies?.[REFRESH_COOKIE_NAME];
-    const validRefreshToken =
-      typeof refreshToken === 'string' ? refreshToken : undefined;
-    const authHeader = req.headers?.['authorization'];
-    const accessToken = authHeader ? authHeader.split(' ')[1] : undefined;
+    const validRefreshToken = readCookie(req, REFRESH_COOKIE_NAME);
+
+    const authHeader = req.headers.authorization;
+    const accessToken =
+      typeof authHeader === 'string' ? authHeader.split(' ')[1] : undefined;
 
     try {
       await this.authService.logout(validRefreshToken, accessToken, actor);
-    } catch (error) {
-      void this.authService.logRevokeFailure(error, actor, validRefreshToken);
+    } catch (err: unknown) {
+      void this.authService.logRevokeFailure(err, actor, validRefreshToken);
     }
 
     res.clearCookie(REFRESH_COOKIE_NAME, {
