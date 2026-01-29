@@ -33,6 +33,7 @@ import {
 import type { Request } from 'express';
 import { PasswordWorkerService } from '../password-worker/password-worker.service';
 import { TenantsMembershipService } from 'src/tenants/tenants-membership.service';
+import { JwtKeysService } from 'src/common/jwt-keys/jwt-keys.service';
 
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_TIME_SECONDS = 3600;
@@ -65,6 +66,7 @@ export class AuthService {
     private rbacService: RbacService,
     private passwordWorker: PasswordWorkerService,
     private tenantsMembershipService: TenantsMembershipService,
+    private jwtKeysService: JwtKeysService,
     @InjectQueue('email') private emailQueue: Queue,
   ) {}
 
@@ -335,9 +337,14 @@ export class AuthService {
     };
 
     try {
+      const { kid, privateKeyPem } =
+        await this.jwtKeysService.getCurrentSigningKey();
       return await this.jwtService.signAsync(payload, {
         issuer,
         audience: ['drreach-api'],
+        algorithm: 'RS256',
+        keyid: kid,
+        privateKey: privateKeyPem,
       });
     } catch (err: unknown) {
       const e = this.formatError(err);

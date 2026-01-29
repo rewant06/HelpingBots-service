@@ -6,6 +6,7 @@ import { UserPayload } from '../types/user-payload.type';
 import { RedisService } from 'src/redis/redis.service';
 import { HttpContextService } from 'src/activity-log/http-context.service';
 import { Request } from 'express';
+import { JwtKeysService } from 'src/common/jwt-keys/jwt-keys.service';
 
 export interface JwtPayload {
   sub: string;
@@ -18,16 +19,56 @@ export interface JwtPayload {
   tenant_roles_by_tenant?: Record<string, string[]>;
 }
 
+function base64UrlToUtf8(b64url: string): string {
+  const b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
+  const padLen = (4 - (b64.length % 4)) % 4;
+  const padded = b64 + '='.repeat(padLen);
+  return Buffer.from(padded, 'base64').toString('utf8');
+}
+
+function readKidFromRawJwt(rawJwtToken: string): string | null {
+  try {
+    const headerPart = rawJwtToken.split('.')[0];
+    if (!headerPart) return null;
+    const headerJson = base64UrlToUtf8(headerPart);
+    const header = JSON.parse(headerJson) as { kid?: unknown };
+    const kid = header.kid;
+    return typeof kid === 'string' && kid.length > 0 ? kid : null;
+  } catch {
+    return null;
+  }
+}
+
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   constructor(
     private redis: RedisService,
     private httpContext: HttpContextService,
+    private jwtKeys: JwtKeysService,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       algorithms: ['RS256'],
-      secretOrKey: loadPublicKey(),
+      secretOrKeyProvider: (
+        req: Request,
+        rawJwtToken: string,
+        done: (err: any, secret?: string) => void,
+      ) => {
+        const kid = readKidFromRawJwt(rawJwtToken);
+        if (!kid) {
+          return done(null, loadPublicKey());
+        }
+        void this.jwtKeys
+          .getPublicKeyPemForKid(kid)
+          .then((pem) => {
+            if (!pem)
+              return done(
+                new UnauthorizedException('Unknown or retired signing key'),
+              );
+            return done(null, pem);
+          })
+          .catch((e) => done(e));
+      },
       passReqToCallback: true,
       ignoreExpiration: false,
     });
