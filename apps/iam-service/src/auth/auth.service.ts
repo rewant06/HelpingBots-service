@@ -32,6 +32,8 @@ import {
 } from '@prisma/iam-client';
 import type { Request } from 'express';
 import { PasswordWorkerService } from '../password-worker/password-worker.service';
+import { TenantsMembershipService } from 'src/tenants/tenants-membership.service';
+import { JwtKeysService } from 'src/common/jwt-keys/jwt-keys.service';
 
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_TIME_SECONDS = 3600;
@@ -63,8 +65,18 @@ export class AuthService {
     private httpContext: HttpContextService,
     private rbacService: RbacService,
     private passwordWorker: PasswordWorkerService,
+    private tenantsMembershipService: TenantsMembershipService,
+    private jwtKeysService: JwtKeysService,
     @InjectQueue('email') private emailQueue: Queue,
   ) {}
+
+  // async validateGoogleUser(googleUser: {
+  //   email: string;
+  //   name: string;
+  //   emailVerified: boolean;
+  // }) {
+  //   const email =
+  // }
 
   private async _createEmailVerificationToken(
     user: UserPayload,
@@ -93,12 +105,14 @@ export class AuthService {
         newUser.id,
         { email: newUser.email, action: 'email-verification-sent' },
       );
-    } catch (error) {
+    } catch (err: unknown) {
+      const e = this.formatError(err);
       this.logger.error(
         `Failed to queue welcome email for ${newUser.email}`,
-        error.stack,
+        e.stack ?? e.message,
       );
     }
+
     return newUser;
   }
 
@@ -160,10 +174,11 @@ export class AuthService {
         },
       });
       this.logger.warn(`Email verified successfully for: ${user.email}`);
-    } catch (error) {
+    } catch (err: unknown) {
+      const e = this.formatError(err);
       this.logger.warn(
         `Email verification successfully for: ${userId}. Maybe already verified?`,
-        error.stack,
+        e.stack ?? e.message,
       );
       throw new BadRequestException('Invalid token or user already verified');
     }
@@ -189,8 +204,11 @@ export class AuthService {
     const multi = this.redisService.client.multi();
     multi.incr(key);
     multi.expire(key, LOCKOUT_TIME_SECONDS, 'NX'); // NX = Only set expiry if it doesn't exist
-    const results = await multi.exec();
-    const attempts = results ? (results[0][1] as number) : 0;
+    type MultiReply = [Error | null, unknown][];
+    const results = (await multi.exec()) as MultiReply | null;
+    const attemptsRaw = results?.[0]?.[1];
+    const attempts =
+      typeof attemptsRaw === 'number' ? attemptsRaw : Number(attemptsRaw ?? 0);
     if (attempts >= MAX_ATTEMPTS) {
       await this.activityLogService.createLog(
         ActivityLogActionType.EXECUTE,
@@ -217,13 +235,22 @@ export class AuthService {
     let isValid = false;
     try {
       isValid = await this.passwordWorker.verify(hashToCompare, dto.password);
-    } catch (err) {
-      this.logger.error('Worker thread failed verification', err);
-
+    } catch (err: unknown) {
+      const e = this.formatError(err);
+      this.logger.error(
+        'Worker thread failed verification',
+        e.stack ?? e.message,
+      );
       isValid = false;
     }
 
-    if (!user || !user.hashedPassword || !isValid) {
+    if (
+      !user ||
+      !user.hashedPassword ||
+      !isValid ||
+      user.status === 'DELETED' ||
+      user.status === 'SUSPENDED'
+    ) {
       await this.activityLogService.createLog(
         ActivityLogActionType.EXECUTE,
         ActivityLogStatus.FAILED,
@@ -268,24 +295,79 @@ export class AuthService {
     return safeUser;
   }
 
-  private async signAccessToken(user: UserPayload): Promise<string> {
+  async switchTenant(
+    user: UserPayload,
+    tenantId: string,
+  ): Promise<{ accessToken: string }> {
+    const isActive = await this.tenantsMembershipService.isActiveMember(
+      user.id,
+      tenantId,
+    );
+    if (!isActive) {
+      throw new ForbiddenException('Not an ACTIVE member of target tenant');
+    }
+    const accessToken = await this.signAccessToken(user, tenantId);
+    return { accessToken };
+  }
+
+  private async signAccessToken(
+    user: UserPayload,
+    forcedActiveTenantId?: string,
+  ): Promise<string> {
     const userPermissions = await this.rbacService.getPermissionsForUser(
       user.id,
     );
+
+    const issuer = process.env.JWT_ISSUER;
+    if (!issuer) {
+      throw new InternalServerErrorException('JWT_ISSUER not configured');
+    }
+
+    const tenant_ids = await this.tenantsMembershipService.getTenantIds(
+      user.id,
+    );
+
+    const tenant_roles_by_tenant =
+      await this.tenantsMembershipService.getTenantRolesByTenant(user.id);
+
+    const defaultActiveTenantId =
+      await this.tenantsMembershipService.getDefaultActiveTenantId(user.id);
+
+    const active_tenant_id = forcedActiveTenantId
+      ? forcedActiveTenantId
+      : defaultActiveTenantId && tenant_ids.includes(defaultActiveTenantId)
+        ? defaultActiveTenantId
+        : tenant_ids.length > 0
+          ? tenant_ids[0]
+          : null;
+
     const payload = {
       sub: user.id,
+      email: user.email,
       name: user.name,
       jti: randomBytes(16).toString('hex'),
       roles: user.roles.map((role) => role.name),
       permissions: userPermissions.map(
         (permission) => `${permission.action}:${permission.subject}`,
       ),
+      tenant_ids,
+      active_tenant_id,
+      tenant_roles_by_tenant,
     };
 
     try {
-      return await this.jwtService.signAsync(payload);
-    } catch (error) {
-      this.logger.error('Failed signing access token', error);
+      const { kid, privateKeyPem } =
+        await this.jwtKeysService.getCurrentSigningKey();
+      return await this.jwtService.signAsync(payload, {
+        issuer,
+        audience: ['drreach-api'],
+        algorithm: 'RS256',
+        keyid: kid,
+        privateKey: privateKeyPem,
+      });
+    } catch (err: unknown) {
+      const e = this.formatError(err);
+      this.logger.error('Failed signing access token', e.stack ?? e.message);
       throw new InternalServerErrorException('Failed to sign access token');
     }
   }
@@ -339,14 +421,16 @@ export class AuthService {
       );
 
       return { accessToken, refreshToken };
-    } catch (error) {
-      this.logger.error('Failed to generate tokens', error);
+    } catch (err: unknown) {
+      const e = this.formatError(err);
+      this.logger.error('Failed to generate tokens', e.stack ?? e.message);
+
       if (
-        error instanceof UnauthorizedException ||
-        error instanceof BadRequestException
+        err instanceof UnauthorizedException ||
+        err instanceof BadRequestException
       )
-        throw error;
-      throw new InternalServerErrorException('Failed to generate tokends');
+        throw err;
+      throw new InternalServerErrorException('Failed to generate tokens');
     }
   }
 
@@ -543,21 +627,15 @@ export class AuthService {
     }
     if (accessToken) {
       try {
-        const payload = await this.jwtService.decode(accessToken);
-        if (
-          payload &&
-          typeof payload === 'object' &&
-          'jti' in payload &&
-          'exp' in payload
-        ) {
-          const jti = payload.jti as string;
-          const exp = payload.exp as number;
+        const decoded = this.jwtService.decode(accessToken);
+
+        if (this.isJwtWithJtiExp(decoded)) {
+          const { jti, exp } = decoded;
           const now = Math.floor(Date.now() / 1000);
           const ttl = exp - now;
 
-          if (ttl > 0) {
+          if (ttl > 0)
             await this.redisService.set(`denylist:jti:${jti}`, '1', ttl);
-          }
         }
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
@@ -567,7 +645,7 @@ export class AuthService {
   }
 
   async logRevokeFailure(
-    error: any,
+    error: unknown,
     actor: UserPayload,
     token: string | undefined,
   ) {
@@ -584,13 +662,12 @@ export class AuthService {
   }
 
   extractDeviceInfo(req: Request): DeviceInfo {
-    const userAgent = req.headers?.['user-agent'] ?? null;
+    const userAgent = req.headers['user-agent'];
     const ip =
-      (req.headers &&
-        (req.headers['x-forwarded-for'] ?? req.socket?.remoteAddress)) ||
-      (req as any).ip ||
-      null;
-    // Optionally parse user-agent to friendly name (use ua-parser-js or similar in production)
+      (req.headers['x-forwarded-for'] as string | undefined) ??
+      req.ip ??
+      req.socket?.remoteAddress ??
+      '';
     return { userAgent: String(userAgent ?? ''), ip: String(ip ?? '') };
   }
 
@@ -641,10 +718,11 @@ export class AuthService {
           action: 'password-reset-request',
         },
       );
-    } catch (error) {
+    } catch (err: unknown) {
+      const e = this.formatError(err);
       this.logger.error(
         `Failed to queue password reset job for ${email}`,
-        error.stack,
+        e.stack ?? e.message,
       );
     }
   }
@@ -659,9 +737,10 @@ export class AuthService {
         algorithms: ['RS256'],
         audience: 'password-reset',
       });
-    } catch (error) {
+    } catch (err: unknown) {
+      const e = this.formatError(err);
       this.logger.warn(
-        `Password reset failed: Invalid or expired token provided.`,
+        'Password reset failed: Invalid or expired token provided.',
       );
       await this.activityLogService.createLog(
         ActivityLogActionType.EXECUTE,
@@ -669,7 +748,7 @@ export class AuthService {
         'Authentication',
         null,
         { action: 'password-reset-attemp' },
-        `Invalid or expired token: ${error.message}`,
+        `Invalid or expired token: ${e.message}`,
       );
       throw new BadRequestException('Invalid or expired token');
     }
@@ -710,10 +789,11 @@ export class AuthService {
         },
       });
       this.logger.log(`User password reset sucessfully for: ${user.email}`);
-    } catch (error) {
+    } catch (err: unknown) {
+      const e = this.formatError(err);
       this.logger.log(
         `Failed to update password for user: ${userId}`,
-        error.stack,
+        e.stack ?? e.message,
       );
       await this.activityLogService.createLog(
         ActivityLogActionType.EXECUTE,
@@ -721,7 +801,7 @@ export class AuthService {
         'User',
         userId,
         { action: 'password-reset' },
-        `Failed to update password in DB: ${error.message}`,
+        `Failed to update password in DB: ${e.message}`,
       );
       throw new InternalServerErrorException('Password update failed.');
     }
@@ -740,5 +820,16 @@ export class AuthService {
       userId,
       { action: 'password-reset-success' },
     );
+  }
+
+  private formatError(err: unknown): { message: string; stack?: string } {
+    if (err instanceof Error) return { message: err.message, stack: err.stack };
+    return { message: String(err) };
+  }
+
+  private isJwtWithJtiExp(x: unknown): x is { jti: string; exp: number } {
+    if (!x || typeof x !== 'object') return false;
+    const rec = x as Record<string, unknown>;
+    return typeof rec.jti === 'string' && typeof rec.exp === 'number';
   }
 }

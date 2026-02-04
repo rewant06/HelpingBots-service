@@ -1,244 +1,387 @@
 generator client {
-  provider        = "prisma-client-js"
-  output          = "../node_modules/@prisma/iam-client"
-  previewFeatures = ["postgresqlExtensions"]
+provider = "prisma-client-js"
+output = "../node_modules/@prisma/iam-client"
+previewFeatures = ["postgresqlExtensions"]
 }
+
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+provider = "postgresql"
+url = env("DATABASE_URL")
 }
 
+
 enum PermissionAction {
-  CREATE
-  READ
-  UPDATE
-  DELETE
-  MANAGE // ALL
+CREATE
+READ
+UPDATE
+DELETE
+MANAGE // ALL
 }
+
 
 // (Action)
 enum ActivityLogActionType {
-  CREATE
-  UPDATE
-  DELETE
-  EXECUTE // For custom actions like "USER_LOGIN
-  GET
+CREATE
+UPDATE
+DELETE
+EXECUTE // For custom actions like "USER_LOGIN
+GET
 }
 
-//  (The outcome)
+
+// (The outcome)
 enum ActivityLogStatus {
-  SUCCESS
-  FAILED
-  PENDING
+SUCCESS
+FAILED
+PENDING
 }
 
-enum TenantStatus {
-  ACTIVE
-  SUSPENDED // Billing failed or ToS violation
-  ARCHIVED // Soft deleted
-}
+
 
 enum TenantType {
-  ORGANIZATION // B2B: Has many users, buys enterprise plans
-  PERSONAL // D2C: Single developer/user
+ORGANIZATION // B2B: Has many users, buys enterprise plans
+PERSONAL // D2C: Single developer/user
 }
+
 
 enum SubscriptionTier {
-  FREE // Default / Trial
-  PRO // Paid Tier 1
-  ENTERPRISE // Custom Contracts
+FREE // Default / Trial
+PRO // Paid Tier 1
+ENTERPRISE // Custom Contracts
 }
+
 
 enum SubscriptionStatus {
-  ACTIVE
-  PAST_DUE // Retry period
-  CANCELED
-  EXPIRED
+ACTIVE
+PAST_DUE // Retry period
+CANCELED
+EXPIRED
 }
 
-enum UserStatus {
-  ACTIVE
-  INACTIVE
-  SUSPENDED // Banned by Platform Admin
-  DELETED // Soft Deleted (GDPR retention)
+
+enum Status {
+ACTIVE
+INACTIVE
+SUSPENDED // Banned by Platform Admin
+DELETED // Soft Deleted (GDPR retention)
+ARCHIVED
+
+
 }
+
+
+enum JwtSigningKeyStatus {
+ACTIVE
+RETIRED
+REVOKED
+}
+
 
 model User {
-  id              String     @id @default(cuid())
-  email           String     @unique
-  name            String?
-  hashedPassword  String?
-  isEmailVerified Boolean    @default(false)
-  status          UserStatus @default(ACTIVE)
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+id String @id @default(cuid())
+email String @unique
+name String?
+hashedPassword String?
+image String?
+isEmailVerified Boolean @default(false)
+status Status @default(ACTIVE)
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
 
-  roles         Role[]
-  activityLogs  ActivityLog[]
-  refreshTokens RefreshToken[]
 
-  // Platform Ownership: A User can own multiple Tenants (e.g. Dev & Prod)
-  ownedTenants Tenant[] @relation("TenantOwner")
+roles Role[]
+activityLogs ActivityLog[]
+refreshTokens RefreshToken[]
+
+
+// Platform Ownership: A User can own multiple Tenants (e.g. Dev & Prod)
+ownedTenants Tenant[] @relation("TenantOwner")
+tenantMemberships TenantMember[]
 }
+
 
 model Role {
-  id          String   @id @default(cuid())
-  name        String   @unique // e.g., "PLATFORM_ADMIN", "TENANT_ADMIN"
-  description String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+id String @id @default(cuid())
+name String @unique // e.g., "PLATFORM_ADMIN", "TENANT_ADMIN"
+description String?
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
 
-  // A role can be assigned to many users
-  users       User[]
-  permissions Permission[]
+
+// A role can be assigned to many users
+users User[]
+tenantMembers TenantMemberRole[]
+permissions Permission[]
 }
+
 
 model Permission {
-  id        String           @id @default(cuid())
-  action    PermissionAction
-  // The subject: e.g., "User", "AuditLog", "Comment"
-  // We use "all" to represent "any subject" (e.g., for a super-admin)
-  subject   String // e.g. "Tenant", "ApiKey", "Billing"
-  createdAt DateTime         @default(now())
-  updatedAt DateTime         @updatedAt
+id String @id @default(cuid())
+action PermissionAction
+// The subject: e.g., "User", "AuditLog", "Comment"
+// We use "all" to represent "any subject" (e.g., for a super-admin)
+subject String // e.g. "Tenant", "ApiKey", "Billing"
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
 
-  // A permission can be granted to many roles
-  roles Role[]
 
-  @@unique([action, subject]) // Ensure "READ:User" can only exist once
+// A permission can be granted to many roles
+roles Role[]
+
+
+@@unique([action, subject]) // Ensure "READ:User" can only exist once
 }
+
 
 model RefreshToken {
-  id         String    @id @default(cuid())
-  tokenHash  String
-  userId     String
-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt  DateTime  @default(now())
-  expiresAt  DateTime
-  revokedAt  DateTime?
-  revoked    Boolean   @default(false)
-  device     String?
-  replacedBy String? // to store id of replacing token
-  lastUsedAt DateTime?
+id String @id @default(cuid())
+tokenHash String
+userId String
+user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+createdAt DateTime @default(now())
+expiresAt DateTime
+revokedAt DateTime?
+revoked Boolean @default(false)
+device String?
+replacedBy String? // to store id of replacing token
+lastUsedAt DateTime?
 
-  @@index([userId])
+
+@@index([userId])
 }
+
+
+model JwtSigningKey {
+id String @id @default(cuid())
+kid String @unique // Key ID
+
+publicJwk Json
+privateKeyEnc String
+
+
+status JwtSigningKeyStatus @default(ACTIVE)
+
+
+createdAt DateTime @default(now())
+activatedAt DateTime @default(now())
+retiredAt DateTime?
+
+
+publishUntil DateTime?
+
+
+@@index([status])
+@@index([publishUntil])
+}
+
 
 model Tenant {
-  id   String @id @default(cuid())
-  name String // e.g., "TechCorp Inc."
-  slug String @unique // e.g., "tech-corp" (URL friendly)
+id String @id @default(cuid())
+name String // e.g., "TechCorp Inc."
+slug String @unique // e.g., "tech-corp" (URL friendly)
 
-  type   TenantType   @default(ORGANIZATION)
-  status TenantStatus @default(ACTIVE)
 
-  // The Platform Admin who pays the bill
-  ownerId String
-  owner   User   @relation("TenantOwner", fields: [ownerId], references: [id])
+type TenantType @default(ORGANIZATION)
+status Status @default(ACTIVE)
 
-  // Billing
-  subscription Subscription?
 
-  // Security & Integration
-  apiKeys     ApiKey[]
-  shadowUsers ShadowUser[]
+// The Platform Admin who pays the bill
+ownerId String
+owner User @relation("TenantOwner", fields: [ownerId], references: [id])
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 
-  @@index([ownerId])
-  @@index([slug])
+// Billing
+subscription Subscription?
+
+
+// Security & Integration
+apiKeys ApiKey[]
+shadowUsers ShadowUser[]
+
+
+members TenantMember[]
+
+
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
+
+
+@@index([ownerId])
+@@index([slug])
 }
+
+
+model TenantMemberRole {
+id String @id @default(cuid())
+tenantMemberId String
+roleId String
+
+
+tenantMember TenantMember @relation(fields: [tenantMemberId], references: [id], onDelete: Cascade)
+role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+
+createdAt DateTime @default(now())
+
+
+@@unique([tenantMemberId, roleId])
+@@index([roleId])
+}
+
+
+model TenantMember {
+id String @id @default(cuid())
+tenantId String
+tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+userId String
+user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+
+status Status @default(ACTIVE)
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
+roles TenantMemberRole[]
+
+
+@@unique([tenantId, userId])
+@@index([userId])
+@@index([tenantId])
+}
+
+
 
 model Subscription {
-  id     String             @id @default(cuid())
-  status SubscriptionStatus @default(ACTIVE)
-  tier   SubscriptionTier   @default(FREE)
+id String @id @default(cuid())
+status SubscriptionStatus @default(ACTIVE)
+tier SubscriptionTier @default(FREE)
 
-  // Scalable Limits for 100+ Services
-  // Format: { "iam": { "users": 500 }, "posts": { "daily_limit": 10000 } }
-  usageLimits Json @default("{}")
 
-  startDate DateTime  @default(now())
-  endDate   DateTime? // Null = Forever (if Free) or Auto-renew logic
-  renewsAt  DateTime? // Next billing date
+// Scalable Limits for 100+ Services
+// Format: { "iam": { "users": 500 }, "posts": { "daily_limit": 10000 } }
+usageLimits Json @default("{}")
 
-  tenantId String @unique
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+startDate DateTime @default(now())
+endDate DateTime? // Null = Forever (if Free) or Auto-renew logic
+renewsAt DateTime? // Next billing date
+
+
+tenantId String @unique
+tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
 }
+
 
 model ApiKey {
-  id String @id @default(cuid())
+id String @id @default(cuid())
 
-  // Security: Store Hash, Display Prefix/Suffix only
-  keyHash String @unique
-  prefix  String // "hk_live"
-  last4   String // "a1b2"
 
-  // Metadata
-  name        String? // e.g., "Production Backend"
-  description String?
+// Security: Store Hash, Display Prefix/Suffix only
+keyHash String @unique
+prefix String // "hk_live"
+last4 String // "a1b2"
 
-  // Access Control
-  // e.g. ["posts:write", "users:read"]
-  scopes String[]
 
-  // Tracking
-  lastUsedAt DateTime?
-  expiresAt  DateTime? // For temporary keys
+// Metadata
+name String? // e.g., "Production Backend"
+description String?
 
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+// Access Control
+// e.g. ["posts:write", "users:read"]
+scopes String[]
 
-  @@index([tenantId])
+
+// Tracking
+lastUsedAt DateTime?
+expiresAt DateTime? // For temporary keys
+
+
+status Status @default(ACTIVE)
+
+
+tenantId String
+tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
+
+
+@@index([tenantId])
 }
+
 
 model ShadowUser {
-  id String @id @default(cuid())
+id String @id @default(cuid())
 
-  // The ID provided by the External Client (e.g., "alice_123")
-  externalId String
 
-  // Metadata sent by client (snapshot)
-  // e.g., { "role": "manager", "department": "engineering" }
-  metadata Json?
+// The ID provided by the External Client (e.g., "alice_123")
+externalId String
+status Status @default(ACTIVE)
+// Metadata sent by client (snapshot)
+// e.g., { "role": "manager", "department": "engineering" }
+metadata Json?
 
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  createdAt  DateTime @default(now())
-  lastActive DateTime @default(now()) // Used for Billing Calculation
+tenantId String
+tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  // Constraint: A Tenant cannot have two users with the same External ID
-  @@unique([tenantId, externalId])
-  @@index([lastActive])
+
+createdAt DateTime @default(now())
+lastActive DateTime @default(now()) // Used for Billing Calculation
+
+
+// Constraint: A Tenant cannot have two users with the same External ID
+@@unique([tenantId, externalId])
+@@index([lastActive])
 }
 
+
 model ActivityLog {
-  id            String                @id @default(cuid())
-  actorId       String?
-  actor         User?                 @relation(fields: [actorId], references: [id], onDelete: SetNull)
-  actorSnapshot Json?
-  // (WHAT)
-  actionType    ActivityLogActionType
-  status        ActivityLogStatus
-  failureReason String?               @db.Text
-  // (AFFECTED)
-  entityType    String
-  entityId      String?
+id String @id @default(cuid())
+actorId String?
+actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+actorSnapshot Json?
+// (WHAT)
+actionType ActivityLogActionType
+status ActivityLogStatus
+failureReason String? @db.Text
+// (AFFECTED)
+entityType String
+entityId String?
 
-  changes   Json?
-  context   Json?
-  createdAt DateTime @default(now())
 
-  @@index([actorId])
-  @@index([entityType, entityId])
-  @@index([actionType])
+changes Json?
+context Json?
+createdAt DateTime @default(now())
+
+
+@@index([actorId])
+@@index([entityType, entityId])
+@@index([actionType])
+}
+
+
+model ApiMetric {
+timestamp DateTime
+tenantId String @default("public") // Use "public" instead of NULL for better indexing
+route String
+method String
+statusCode Int
+
+
+requestCount Int @default(0)
+totalDuration BigInt @default(0) // Sum of all latencies (ms)
+
+
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
+
+
+@@id([tenantId, timestamp, route, method, statusCode])
 }

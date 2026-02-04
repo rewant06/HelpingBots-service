@@ -194,6 +194,7 @@ export class UsersService {
         id: true,
         name: true,
         email: true,
+        status: true,
         hashedPassword: true,
         isEmailVerified: true,
 

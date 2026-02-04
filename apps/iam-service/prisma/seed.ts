@@ -41,7 +41,7 @@ async function main() {
     create: { action: PermissionAction.CREATE, subject: 'Tenant' },
   });
 
-  // VETERAN ADDITION: Allow users to manage API Keys
+  // Allow users to manage API Keys
   const permManageApiKey = await prisma.permission.upsert({
     where: {
       action_subject: { action: PermissionAction.MANAGE, subject: 'ApiKey' },
@@ -114,8 +114,8 @@ async function main() {
     },
   });
 
-  // --- Optional: Create a Test Admin User ---
-  // You can uncomment this to create a test admin
+  // Create a Test Admin User ---
+  // uncomment this to create a test admin
   // Make sure to set a secure password
   // const adminEmail = 'admin@example.com';
   // const adminPassword = 'super-strong-admin-password-123';

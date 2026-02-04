@@ -9,6 +9,7 @@ import {
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { ActivityLogService } from 'src/activity-log/activity-log.service';
+import { TenantsMembershipService } from './tenants-membership.service';
 import {
   ActivityLogActionType,
   ActivityLogStatus,
@@ -25,6 +26,7 @@ export class TenantsService {
   constructor(
     private prisma: PrismaService,
     private activityLogService: ActivityLogService,
+    private tenantsMembershipService: TenantsMembershipService,
   ) {}
 
   private async ensureUniqueSlug(
@@ -53,45 +55,70 @@ export class TenantsService {
   async createTenant(dto: CreateTenantDto, ownerId: string) {
     this.logger.log(`User [${ownerId}] creating tenant [${dto.slug}]`);
     const finalSlug = await this.ensureUniqueSlug(dto.name, dto.slug);
+    const tenantAdminRole = await this.prisma.role.upsert({
+      where: { name: 'TENANT_ADMIN' },
+      update: {},
+      create: { name: 'TENANT_ADMIN', description: 'Tenant admin' },
+    });
 
     try {
-      const result = await this.prisma.$transaction(async (tx) => {
-        const tenant = await tx.tenant.create({
-          data: {
-            name: dto.name,
-            slug: finalSlug,
-            type: dto.type || TenantType.ORGANIZATION,
-            ownerId,
-            subscription: {
-              create: {
-                tier: SubscriptionTier.FREE,
-                usageLimits: {
-                  users: 200,
-                  storage_gb: 1,
+      const result = await this.prisma.$transaction(
+        async (tx) => {
+          const tenant = await tx.tenant.create({
+            data: {
+              name: dto.name,
+              slug: finalSlug,
+              type: dto.type || TenantType.ORGANIZATION,
+              ownerId,
+              subscription: {
+                create: {
+                  tier: SubscriptionTier.FREE,
+                  usageLimits: {
+                    users: 200,
+                    storage_gb: 1,
+                  },
                 },
               },
             },
-          },
-          include: {
-            subscription: true,
-          },
-        });
-        await this.activityLogService.createLog(
-          ActivityLogActionType.CREATE,
-          ActivityLogStatus.SUCCESS,
-          'Tenant',
-          tenant.id,
-          {
-            slug: finalSlug,
-            type: dto.type,
-            jobTitle: dto.jobTitle,
-            authorized: dto.isAuthorized,
-          },
-          undefined,
-          tx,
-        );
-        return tenant;
-      });
+            include: {
+              subscription: true,
+            },
+          });
+
+          const member = await tx.tenantMember.create({
+            data: {
+              tenantId: tenant.id,
+              userId: ownerId,
+              status: 'ACTIVE',
+            },
+          });
+
+          await tx.tenantMemberRole.create({
+            data: {
+              tenantMemberId: member.id,
+              roleId: tenantAdminRole.id,
+            },
+          });
+
+          await this.activityLogService.createLog(
+            ActivityLogActionType.CREATE,
+            ActivityLogStatus.SUCCESS,
+            'Tenant',
+            tenant.id,
+            {
+              slug: finalSlug,
+              type: dto.type,
+              jobTitle: dto.jobTitle,
+              authorized: dto.isAuthorized,
+            },
+            undefined,
+            tx,
+          );
+          return tenant;
+        },
+        { timeout: 15000, maxWait: 5000 },
+      );
+      await this.tenantsMembershipService.clearMembershipCache(ownerId);
       return result;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
