@@ -28,6 +28,7 @@ import type { UserPayload } from './types/user-payload.type';
 import { ForgotPassword } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
+import { SwitchTenantDto } from './dto/switch-tenant.dto';
 
 function readCookie(req: Request, name: string): string | undefined {
   const cookies = (req as unknown as { cookies?: Record<string, unknown> })
@@ -170,5 +171,16 @@ export class AuthController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async verifyEmail(@Body() dto: VerifyEmailDto) {
     await this.authService.verifyEmail(dto);
+  }
+
+  @Post('switch-tenant')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  async switchTenant(@User() actor: UserPayload, @Body() dto: SwitchTenantDto) {
+    const { accessToken } = await this.authService.switchTenant(
+      actor,
+      dto.tenant_id,
+    );
+    return { accessToken };
   }
 }

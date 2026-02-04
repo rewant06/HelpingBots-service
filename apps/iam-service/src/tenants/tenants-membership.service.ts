@@ -184,6 +184,14 @@ export class TenantsMembershipService {
     return this.userHasRoleInTenant(userId, tenantId, 'TENANT_ADMIN');
   }
 
+  async isActiveMember(userId: string, tenantId: string): Promise<boolean> {
+    const membership = await this.prisma.tenantMember.findUnique({
+      where: { tenantId_userId: { tenantId, userId } },
+      select: { status: true },
+    });
+    return membership?.status === 'ACTIVE';
+  }
+
   async clearMembershipCache(userId: string): Promise<void> {
     const cacheKey = `${this.CACHE_KEY_PREFIX}${userId}`;
     try {

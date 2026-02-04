@@ -295,7 +295,25 @@ export class AuthService {
     return safeUser;
   }
 
-  private async signAccessToken(user: UserPayload): Promise<string> {
+  async switchTenant(
+    user: UserPayload,
+    tenantId: string,
+  ): Promise<{ accessToken: string }> {
+    const isActive = await this.tenantsMembershipService.isActiveMember(
+      user.id,
+      tenantId,
+    );
+    if (!isActive) {
+      throw new ForbiddenException('Not an ACTIVE member of target tenant');
+    }
+    const accessToken = await this.signAccessToken(user, tenantId);
+    return { accessToken };
+  }
+
+  private async signAccessToken(
+    user: UserPayload,
+    forcedActiveTenantId?: string,
+  ): Promise<string> {
     const userPermissions = await this.rbacService.getPermissionsForUser(
       user.id,
     );
@@ -315,8 +333,9 @@ export class AuthService {
     const defaultActiveTenantId =
       await this.tenantsMembershipService.getDefaultActiveTenantId(user.id);
 
-    const active_tenant_id =
-      defaultActiveTenantId && tenant_ids.includes(defaultActiveTenantId)
+    const active_tenant_id = forcedActiveTenantId
+      ? forcedActiveTenantId
+      : defaultActiveTenantId && tenant_ids.includes(defaultActiveTenantId)
         ? defaultActiveTenantId
         : tenant_ids.length > 0
           ? tenant_ids[0]
