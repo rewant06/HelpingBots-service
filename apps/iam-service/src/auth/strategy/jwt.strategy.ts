@@ -13,7 +13,14 @@ export interface JwtPayload {
   email: string;
   name?: string;
   jti: string;
+
+  iss?: string;
+  aud?: string | string[];
+  exp?: number;
+
   roles?: string[];
+  permissions?: string[];
+
   tenant_ids?: string[];
   active_tenant_id?: string;
   tenant_roles_by_tenant?: Record<string, string[]>;
@@ -78,6 +85,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     req: Request,
     payload: JwtPayload,
   ): Promise<UserPayload | null> {
+    (req as any).authClaims = payload;
     if (!payload.jti) {
       throw new UnauthorizedException('Invalid token claim: missing jti');
     }
@@ -85,6 +93,22 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     const isDenied = await this.redis.get(`denylist:jti:${payload.jti}`);
     if (isDenied) {
       return null; // This token is on the denylist (logged out)
+    }
+
+    const expectedIss = process.env.JWT_ISSUER;
+    if (!expectedIss) {
+      throw new UnauthorizedException('JWT_ISSUER not configured');
+    }
+    if (payload.iss !== expectedIss) {
+      throw new UnauthorizedException('Invalid issuer');
+    }
+
+    const aud = payload.aud;
+    const okAud =
+      aud === 'drreach-api' ||
+      (Array.isArray(aud) && aud.includes('drreach-api'));
+    if (!okAud) {
+      throw new UnauthorizedException('Invalid audience');
     }
 
     const roles = Array.isArray(payload.roles)
