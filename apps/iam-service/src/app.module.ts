@@ -19,6 +19,7 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
+import { AuthzModule } from './authz/authz.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { ScheduleModule } from '@nestjs/schedule';
     ApiKeysModule,
     PasswordWorkerModule,
     TenantsModule,
+    AuthzModule,
   ],
   controllers: [AppController, TenantsController],
   providers: [
