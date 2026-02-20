@@ -10,6 +10,7 @@ from fastapi import FastAPI
 
 from app.api.health import router as health_router
 from app.api.meta import router as meta_router
+from app.api.meta import v1_router as v1_router
 from app.core.errors import register_exception_handlers
 from app.core.middleware import (
     CorrelationIdMiddleware,
@@ -80,7 +81,7 @@ def create_app() -> FastAPI:
     # Routers
     app.include_router(health_router)
     app.include_router(meta_router)
-
+    app.include_router(v1_router)
     # Exception handlers
     register_exception_handlers(app)
 

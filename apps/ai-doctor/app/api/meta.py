@@ -1,23 +1,23 @@
 from __future__ import annotations
+from app.core.auth.iam_uvmv import require_actor_context
 
 import os
-from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, ConfigDict
+from typing import Any
+
+import httpx
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, ValidationError
+
+from app.core.auth.iam_uvmv import require_actor_context
+from app.api.schemas.authz_version import AuthzVersionResponse
 
 FEATURE_DEV_AUTH_ENV = "FEATURE_DEV_AUTH"
 FEATURE_JWT_AUTH_ENV = "FEATURE_JWT_AUTH"
+IAM_SERVICE_URL_ENV = "IAM_SERVICE_URL"
 
 router = APIRouter(tags=["meta"])
-
-
-class VersionCheckResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    sub: str
-    active_tenant_id: str
-    uv_current: int
-    mv_current: int
-    user_status: str
-    membership_status: str
+v1_router = APIRouter(prefix="/v1", tags=["meta"], dependencies=[Depends(require_actor_context)])
 
 
 class MetaResponse(BaseModel):
@@ -30,33 +30,32 @@ class MetaResponse(BaseModel):
 def _feature_enabled(name: str) -> bool:
     return os.getenv(name, "false").strip().lower() == "true"
 
-
-def _get_dev_actor_from_headers(request: Request) -> tuple[str, str]:
-    user_id = request.headers.get("X-Debug-User-Id")
-    tenant_id = request.headers.get("X-Debug-Tenant-Id")
-    if not user_id or not tenant_id:
-        raise HTTPException(status_code=401, detail="Missing X-Debug-User-Id or X-Debug-Tenant-Id")
-    return user_id, tenant_id
+def _iam_base_url() -> str:
+    return (os.getenv(IAM_SERVICE_URL_ENV) or "http://localhost:8000").rstrip("/")
 
 
-@router.get("/authz/version", response_model=VersionCheckResponse, tags=["authz"])
-async def authz_version(request: Request) -> VersionCheckResponse:
-    if not _feature_enabled(FEATURE_DEV_AUTH_ENV):
-        raise HTTPException(status_code=501, detail="DEV_AUTH disabled; JWT/IAM authz not yet configured")
+@router.get("/authz/version", response_model=AuthzVersionResponse, tags=["authz"])
+async def authz_version() -> AuthzVersionResponse:
+    url = f"{_iam_base_url()}/authz/version"
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(url)
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=503, detail="Authentication service timeout")
+    except httpx.RequestError:
+        raise HTTPException(status_code=503, detail="Authentication service unavailable")
 
-    sub, active_tenant_id = _get_dev_actor_from_headers(request)
+    if resp.status_code != 200:
+        raise HTTPException(status_code=503, detail="Authentication service error")
 
-    return VersionCheckResponse(
-        sub=sub,
-        active_tenant_id=active_tenant_id,
-        uv_current=0,
-        mv_current=0,
-        user_status="active",
-        membership_status="active",
-    )
+    try:
+        return AuthzVersionResponse.model_validate(resp.json())
+    except ValidationError:
+        raise HTTPException(status_code=503, detail="Authentication service returned invalid contract")
 
 
-@router.get("/v1/meta", response_model=MetaResponse)
+
+@v1_router.get("/meta", response_model=MetaResponse)
 async def meta() -> MetaResponse:
     return MetaResponse(
         version=os.getenv("SERVICE_VERSION", "1.0.0"),
