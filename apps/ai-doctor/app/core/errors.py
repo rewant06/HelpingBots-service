@@ -13,6 +13,7 @@ def _correlation_id(request: Request) -> str | None:
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+        headers = dict(exc.headers or {})
         return JSONResponse(
             status_code=exc.status_code,
             content={
@@ -21,6 +22,7 @@ def register_exception_handlers(app: FastAPI) -> None:
                 "correlation_id": _correlation_id(request),
                 "details": exc.detail if isinstance(exc.detail, dict) else None,
             },
+            headers=headers,
         )
 
     @app.exception_handler(StarletteHTTPException)
