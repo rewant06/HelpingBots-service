@@ -30,3 +30,9 @@ pytest-asyncio = "^0.25.0" # Required for testing async FastAPI routes
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+  "integration: tests that require DATABASE_URL / real DB",
+]

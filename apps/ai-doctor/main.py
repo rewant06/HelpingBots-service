@@ -12,6 +12,7 @@ from app.api.health import router as health_router
 from app.api.authz import router as authz_router
 from app.api.meta import router as meta_router
 from app.api.meta import v1_router as v1_router
+from app.api.profiles import router as profiles_router
 from app.core.errors import register_exception_handlers
 from app.core.middleware import (
     CorrelationIdMiddleware,
@@ -33,16 +34,29 @@ async def lifespan(app: FastAPI):
         app.state.db_init_failed = False
     else:
         try:
-            u = urlparse(dsn)
+            # u = urlparse(dsn)
+            # app.state.db_pool = await asyncpg.create_pool(
+            #     host=u.hostname,
+            #     port=u.port or 5432,
+            #     user=u.username,
+            #     password=u.password,
+            #     database=(u.path or "/postgres").lstrip("/"),
+            #     min_size=1,
+            #     max_size=5,
+            #     ssl="require",
+            # )
+            # Supabase pooler (6543) typically runs transaction pooling, which does not
+            # support prepared statements; asyncpg should disable statement cache.
+            dsn_clean = dsn.strip()
+            if len(dsn_clean) >= 2 and dsn_clean[0] == dsn_clean[-1] and dsn_clean[0] in ("'", '"'):
+                dsn_clean = dsn_clean[1:-1]
+
             app.state.db_pool = await asyncpg.create_pool(
-                host=u.hostname,
-                port=u.port or 5432,
-                user=u.username,
-                password=u.password,
-                database=(u.path or "/postgres").lstrip("/"),
+                dsn=dsn_clean,
                 min_size=1,
                 max_size=5,
                 ssl="require",
+                statement_cache_size=0,
             )
             app.state.db_init_failed = False
         except Exception as e:
@@ -84,7 +98,7 @@ def create_app() -> FastAPI:
     app.include_router(authz_router)
     app.include_router(meta_router)
     app.include_router(v1_router)
-    # Exception handlers
+    app.include_router(profiles_router)
     register_exception_handlers(app)
 
     return app
