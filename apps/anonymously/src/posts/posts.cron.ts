@@ -32,10 +32,21 @@ export class PostsCronService {
 
         const count = parseInt(countStr, 10);
 
-        await this.prisma.post.update({
-          where: { id: postId },
-          data: { viewCount: { increment: count } },
-        });
+        try {
+          await this.prisma.post.update({
+            where: { id: postId },
+            data: { viewCount: { increment: count } },
+          });
+        } catch (e: any) {
+          // Prisma P1001 = can't reach DB server
+          if (e?.code === 'P1001') {
+            this.logger.error(
+              `DB unreachable, skipping view sync for ${postId}`,
+            );
+            return;
+          }
+          throw e;
+        }
       }),
     );
 
