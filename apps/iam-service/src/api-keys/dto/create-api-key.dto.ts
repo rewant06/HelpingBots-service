@@ -19,10 +19,10 @@ export class CreateApiKeyDto {
 
   @IsArray()
   @IsString({ each: true })
-  //Regex to ensure scopes follow pattern "resource:action"
-  @Matches(/^[a-z]+:[a-z]+$/, {
+  @Matches(/^[a-z0-9_-]+(?::[a-z0-9_-]+){1,2}$/, {
     each: true,
-    message: 'Scopes must be format resource:action (e.g. posts:write)',
+    message:
+      'Scopes must be resource:action or resource:subresource:action (e.g. posts:write, labs:attachments:write)',
   })
   scopes: string[]; // ["posts:write", "analytics:read"]
 }

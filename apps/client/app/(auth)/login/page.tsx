@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm, SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -20,8 +20,17 @@ type LoginFormInputs = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [apiError, setApiError] = React.useState<string | null>(null);
 
+  const nextParam = searchParams.get("next");
+  const safeNext =
+    nextParam &&
+    nextParam.startsWith("/") &&
+    !nextParam.startsWith("//") &&
+    !nextParam.includes("://")
+      ? nextParam
+      : null;
   const login = useAuthStore((state) => state.login);
 
   const {
@@ -36,8 +45,9 @@ export default function LoginPage() {
     setApiError(null);
     try {
       await login(data);
-      toast.success("Welcome back!");
-      logger.log("Login successful, redirecting to dashboard...");
+      const destination = safeNext ?? "/dashboard";
+      logger.log(`Login successful, redirecting to ${destination}...`);
+      router.replace(destination);
       router.push("/dashboard");
     } catch (error: unknown) {
       let errorMsg = "An unknown error occured";

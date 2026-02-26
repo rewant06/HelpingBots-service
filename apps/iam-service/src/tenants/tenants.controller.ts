@@ -7,6 +7,8 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -24,6 +26,7 @@ import { User } from 'src/auth/decorator/user.decorator';
 import type { UserPayload } from '../auth/types/user-payload.type';
 import { TenantsService } from './tenants.service';
 import { CreateTenantDto } from './dto/create-tenant.dto';
+import { TenantsMembershipService } from './tenants-membership.service';
 
 @ApiTags('Tenants')
 @ApiBearerAuth()
@@ -33,6 +36,7 @@ export class TenantsController {
   constructor(
     private readonly tenantsService: TenantsService,
     private readonly apiKeysService: ApiKeysService,
+    private readonly tenantsMembershipService: TenantsMembershipService,
   ) {}
 
   @Post()
@@ -94,5 +98,59 @@ export class TenantsController {
     @User() user: UserPayload,
   ) {
     return this.tenantsService.getTenantKeys(tenantId, user.id);
+  }
+
+  @Post(':tenantId/api-keys')
+  @HttpCode(HttpStatus.CREATED)
+  async createTenantApiKey(
+    @Param('tenantId') tenantId: string,
+    @Body() dto: CreateApiKeyDto,
+    @User() user: UserPayload,
+  ) {
+    const isAdmin = await this.tenantsMembershipService.isTenantAdmin(
+      user.id,
+      tenantId,
+    );
+    if (!isAdmin) throw new ForbiddenException('TENANT_ADMIN required');
+
+    //  must include labs:write (labs:attachments:write optional)
+    if (!Array.isArray(dto.scopes) || !dto.scopes.includes('labs:write')) {
+      throw new BadRequestException('scopes must include labs:write');
+    }
+
+    return await this.apiKeysService.createApiKey(tenantId, dto);
+  }
+
+  @Post(':tenantId/api-keys/:keyId/rotate')
+  @HttpCode(HttpStatus.OK)
+  async rotateTenantApiKey(
+    @Param('tenantId') tenantId: string,
+    @Param('keyId') keyId: string,
+    @User() user: UserPayload,
+  ) {
+    const isAdmin = await this.tenantsMembershipService.isTenantAdmin(
+      user.id,
+      tenantId,
+    );
+    if (!isAdmin) throw new ForbiddenException('TENANT_ADMIN required');
+
+    return await this.apiKeysService.rotateApiKey(tenantId, keyId);
+  }
+
+  @Post(':tenantId/api-keys/:keyId/revoke')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async revokeTenantApiKey(
+    @Param('tenantId') tenantId: string,
+    @Param('keyId') keyId: string,
+    @User() user: UserPayload,
+  ) {
+    const isAdmin = await this.tenantsMembershipService.isTenantAdmin(
+      user.id,
+      tenantId,
+    );
+    if (!isAdmin) throw new ForbiddenException('TENANT_ADMIN required');
+
+    await this.apiKeysService.revokeApiKey(tenantId, keyId);
+    return;
   }
 }

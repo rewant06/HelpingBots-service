@@ -3,3 +3,6 @@ Notes.md
 __pycache__
 .venv
 .env
+poetry.lock
+apps/ai-doctor/poetry.lock
+documents

@@ -20,6 +20,12 @@ import { Prisma, ReactionType } from '@prisma/posting-client';
 import { UpdatePostDto } from './dto/update-post.dto';
 import { AvatarService } from 'src/common/services/avatar.service';
 
+type InteractionState = {
+  reaction: string | null;
+  hasVoted: boolean;
+  votedOptionId: string | null;
+};
+
 @Injectable()
 export class PostsService {
   private readonly logger = new Logger(PostsService.name);
@@ -221,10 +227,7 @@ export class PostsService {
       }
     }
 
-    let interactionMap: Record<
-      string,
-      { reaction: string | null; hasVoted: boolean }
-    >;
+    let interactionMap: Record<string, InteractionState> = {};
 
     if (currentUserId && rawResult.data.length > 0) {
       const postIds = rawResult.data.map((p) => p.id);
@@ -244,15 +247,18 @@ export class PostsService {
           : false;
 
       const { shadowUserId, ...rest } = p;
-      const interactions = interactionMap[p.id] || {
+      const interactions: InteractionState = interactionMap[p.id] || {
         reaction: null,
         hasVoted: false,
+        votedOptionId: null,
       };
 
       return {
         ...rest,
         isAuthor,
         userReaction: interactions.reaction,
+        hasVoted: interactions.hasVoted,
+        votedOptionId: interactions.votedOptionId,
       };
     });
 
@@ -295,6 +301,7 @@ export class PostsService {
     const postId = option.postId;
     const votersKey = `{poll:${postId}}:voters`;
     const countsKey = `{poll:${postId}}:counts`;
+    const userVotesKey = `{poll:${postId}}:user_votes`;
 
     try {
       const hasVoted = await this.redisService.client.sismember(
@@ -305,7 +312,9 @@ export class PostsService {
 
       const multi = this.redisService.client.multi();
       multi.sadd(votersKey, shadowUserId);
+      multi.hset(userVotesKey, shadowUserId, pollOptionId);
       multi.hincrby(countsKey, pollOptionId, 1);
+      multi.expire(userVotesKey, 2592000);
       multi.expire(votersKey, 2592000);
       multi.expire(countsKey, 2592000);
       await multi.exec();
@@ -572,21 +581,73 @@ export class PostsService {
     postIds.forEach((id) => {
       pipeline.hget(`{post:${id}}:user_reactions`, shadowUserId);
       pipeline.sismember(`{poll:${id}}:voters`, shadowUserId);
+      pipeline.hget(`{poll:${id}}:user_votes`, shadowUserId);
     });
     const results = await pipeline.exec();
-    const map: Record<string, { reaction: string | null; hasVoted: boolean }> =
-      {};
+    const map: Record<string, InteractionState> = {};
     if (results) {
       postIds.forEach((id, index) => {
-        const reactionRes = results[index * 2];
-        const voteRes = results[index * 2 + 1];
+        const reactionRes = results[index * 3];
+        const voteRes = results[index * 3 + 1];
+        const votedOptionRes = results[index * 3 + 2];
 
         const reaction = reactionRes?.[1] as string | null;
         const hasVoted = (voteRes?.[1] as number) === 1;
+        const votedOptionId = (votedOptionRes?.[1] as string | null) ?? null;
 
-        map[id] = { reaction, hasVoted };
+        map[id] = { reaction, hasVoted, votedOptionId };
       });
     }
+
+    // --- DB fallback for persistence (old votes / expired Redis keys) ---
+    const missingPostIds = postIds.filter((postId) => {
+      const i = map[postId];
+      return !i || !i.hasVoted || (i.hasVoted && !i.votedOptionId);
+    });
+
+    if (missingPostIds.length > 0) {
+      // NOTE: adjust relation names if your Prisma schema differs
+      const dbVotes = await this.prisma.pollVote.findMany({
+        where: {
+          shadowUserId,
+          pollOption: { postId: { in: missingPostIds } },
+        },
+        select: {
+          pollOptionId: true,
+          pollOption: { select: { postId: true } },
+        },
+      });
+
+      for (const v of dbVotes) {
+        const postId = v.pollOption.postId;
+
+        const existing = map[postId] ?? {
+          reaction: null,
+          hasVoted: false,
+          votedOptionId: null,
+        };
+
+        map[postId] = {
+          ...existing,
+          hasVoted: true,
+          votedOptionId: existing.votedOptionId ?? v.pollOptionId,
+        };
+      }
+
+      // Optional backfill so next request hits Redis
+      const backfill = this.redisService.client.pipeline();
+      for (const v of dbVotes) {
+        const postId = v.pollOption.postId;
+        backfill.sadd(`{poll:${postId}}:voters`, shadowUserId);
+        backfill.hset(
+          `{poll:${postId}}:user_votes`,
+          shadowUserId,
+          v.pollOptionId,
+        );
+      }
+      await backfill.exec();
+    }
+
     return map;
   }
 

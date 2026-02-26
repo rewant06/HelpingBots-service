@@ -33,23 +33,15 @@ export function useVeilFeed() {
         setError(null);
 
         const response = await veilApi.getGlobalFeed(
-          currentCursor || undefined
+          currentCursor || undefined,
         );
         const newPosts = response.data;
         const postIds = newPosts.map((p) => p.id);
 
-        try {
-          veilApi.getInteractions(postIds).then((map) => {
-            hydrateInteractions(map);
-          });
-        } catch (err) {
-          logger.warn("Failed to hydrate interactions", err);
-        }
-
         setPosts((prev) => {
           if (reset) return newPosts;
           const uniqueNew = newPosts.filter(
-            (newP) => !prev.find((p) => p.id === newP.id)
+            (newP) => !prev.find((p) => p.id === newP.id),
           );
           return [...prev, ...uniqueNew];
         });
@@ -68,7 +60,7 @@ export function useVeilFeed() {
         setIsFetchingMore(false);
       }
     },
-    [cursor, posts.length, isFatalError, hydrateInteractions]
+    [cursor, posts.length, isFatalError, hydrateInteractions],
   );
 
   // Initial Load

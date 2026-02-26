@@ -28,6 +28,7 @@ export interface Post {
 
   userReaction?: 'AGREE' | 'DISAGREE' | null;
   hasVoted?: boolean;
+  votedOptionId?: string | null;
 
   // Cursor for pagination
   cursorId?: string; 
@@ -44,5 +45,6 @@ export interface InteractionMap {
   [postId: string]: {
     reaction: 'AGREE' | 'DISAGREE' | null;
     hasVoted: boolean;
+    votedOptionId: string | null;
   };
 }

@@ -6,11 +6,15 @@ interface InteractionState {
 
   initializeInteraction: (
     postId: string,
-    data: { reaction: 'AGREE' | 'DISAGREE' | null; hasVoted: boolean }
+    data: {
+      reaction: "AGREE" | "DISAGREE" | null;
+      hasVoted: boolean;
+      votedOptionId?: string | null;
+    },
   ) => void;
   hydrate: (newMap: InteractionMap) => void;
   setReaction: (postId: string, reaction: "AGREE" | "DISAGREE" | null) => void;
-  setVoted: (postId: string) => void;
+  setVoted: (postId: string, votedOptionId: string | null) => void;
 }
 
 export const useInteractionStore = create<InteractionState>((set) => ({
@@ -26,13 +30,13 @@ export const useInteractionStore = create<InteractionState>((set) => ({
       interactions: {
         ...state.interactions,
         [postId]: {
-          ...(state.interactions[postId] || { hasVoted: false }),
+          ...(state.interactions[postId] || { hasVoted: false, votedOptionId: null  }),
           reaction,
         },
       },
     })),
 
-initializeInteraction: (postId, data) =>
+  initializeInteraction: (postId, data) =>
     set((state) => ({
       interactions: {
         ...state.interactions,
@@ -40,13 +44,14 @@ initializeInteraction: (postId, data) =>
       },
     })),
 
-  setVoted: (postId) =>
+  setVoted: (postId, votedOptionId) =>
     set((state) => ({
       interactions: {
         ...state.interactions,
         [postId]: {
-          ...(state.interactions[postId] || { reaction: null }),
+          ...(state.interactions[postId] || { reaction: null, hasVoted: false, votedOptionId: null }),
           hasVoted: true,
+          votedOptionId,
         },
       },
     })),

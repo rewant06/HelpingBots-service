@@ -3,6 +3,7 @@ import {
   InternalServerErrorException,
   Logger,
   UnauthorizedException,
+  NotFoundException,
   ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
@@ -147,6 +148,7 @@ export class ApiKeysService {
           tenantId: true,
           scopes: true,
           expiresAt: true,
+          status: true,
           tenant: {
             select: { status: true },
           },
@@ -163,6 +165,10 @@ export class ApiKeysService {
     if (!keyRecord) {
       this.logger.warn(`Invalid Key Hash for ID: ${uuidPart}`);
       throw new UnauthorizedException('Invalid API Key');
+    }
+
+    if (keyRecord.status !== 'ACTIVE') {
+      throw new UnauthorizedException('API key revoked');
     }
 
     const isValid = await this.passwordWorker.verify(keyRecord.keyHash, rawKey);
@@ -193,6 +199,77 @@ export class ApiKeysService {
       keyId: keyRecord.id,
       scopes: keyRecord.scopes,
     };
+  }
+
+  async rotateApiKey(
+    tenantId: string,
+    keyId: string,
+  ): Promise<ApiKeyCreationResult> {
+    const randomSecret = randomBytes(this.ENTROPY_BYTES).toString('hex');
+    const rawKey = `${this.KEY_PREFIX}${this.KEY_SEPARATOR}${keyId}${this.KEY_SEPARATOR}${randomSecret}`;
+    const last4 = rawKey.slice(-4);
+
+    const keyHash = await this.passwordWorker.hash(rawKey);
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.apiKey.findFirst({
+        where: { id: keyId, tenantId },
+        select: { id: true, name: true, status: true, createdAt: true },
+      });
+      if (!existing) throw new NotFoundException('API key not found');
+      if (existing.status !== 'ACTIVE')
+        throw new ConflictException('API key is not ACTIVE');
+
+      const rec = await tx.apiKey.update({
+        where: { id: keyId },
+        data: { keyHash, last4 },
+      });
+
+      await this.activityLogService.createLog(
+        ActivityLogActionType.UPDATE,
+        ActivityLogStatus.SUCCESS,
+        'ApiKey',
+        rec.id,
+        { action: 'rotate', tenantId },
+        undefined,
+        tx,
+      );
+
+      return rec;
+    });
+
+    // Invalidation policy: immediate. Old raw key fails hash verify after rotation.
+    return {
+      id: updated.id,
+      name: updated.name || 'Unnamed Key',
+      rawKey,
+      createdAt: updated.createdAt,
+    };
+  }
+
+  async revokeApiKey(tenantId: string, keyId: string): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.apiKey.findFirst({
+        where: { id: keyId, tenantId },
+        select: { id: true, status: true },
+      });
+      if (!existing) throw new NotFoundException('API key not found');
+
+      await tx.apiKey.update({
+        where: { id: keyId },
+        data: { status: 'INACTIVE' },
+      });
+
+      await this.activityLogService.createLog(
+        ActivityLogActionType.UPDATE,
+        ActivityLogStatus.SUCCESS,
+        'ApiKey',
+        keyId,
+        { action: 'revoke', tenantId },
+        undefined,
+        tx,
+      );
+    });
   }
 
   private async updateLastUsed(id: string) {
