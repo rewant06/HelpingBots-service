@@ -9,7 +9,6 @@ import { useAuthStore } from "@/store/auth.store";
 import { logger } from "@/lib/logger";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { CRMDemoEntry } from '@/components/crm/CRMDemoEntry';
 
 export function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
