@@ -77,3 +77,9 @@ ProductionPrisma.md
 Production_Prisma.md
 apps/ai-doctor/poetry.lock
 pnpm-lock.yaml
+
+backup_before_fix.sql
+db_backups/*
+docker-compose.prod.yml
+infrastructure/*
+infrastructureLocal/*
