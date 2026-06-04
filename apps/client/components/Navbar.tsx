@@ -9,6 +9,7 @@ import { useAuthStore } from "@/store/auth.store";
 import { logger } from "@/lib/logger";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { CRMDemoEntry } from '@/components/crm/CRMDemoEntry';
 
 export function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
@@ -83,11 +84,11 @@ export function Navbar() {
               className="relative overflow-hidden bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 shadow-[0_0_15px_rgba(139,92,246,0.3)] hover:shadow-[0_0_25px_rgba(139,92,246,0.5)] transition-all group"
             >
               <Link
-                href="/veil"
+                href="/crm"
                 className="flex items-center gap-2 font-bold"
               >
                 <Zap className="w-4 h-4 fill-primary animate-pulse" />
-                <span>VEIL</span>
+                <span>Demo</span>
                 {/* Live Indicator Dot */}
                 <span className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-red-500 animate-ping" />
               </Link>

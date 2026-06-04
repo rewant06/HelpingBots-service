@@ -20,14 +20,11 @@ export default function CRMLayout({
   return (
     <CRMRoleProvider>
       {/*
-       * Outer wrapper: full-width column.
-       * min-h-screen ensures the sidebar fills the viewport even on short pages.
+       * pt-16 md:pt-20 clears the fixed marketing navbar (h-16 mobile / h-20 desktop).
+       * Without this, the CRM topbar renders behind the fixed navbar — invisible.
        */}
-      <div className="flex min-h-screen w-full flex-col">
-        {/* Topbar spans the full CRM width */}
+      <div className="flex min-h-screen w-full flex-col pt-16 md:pt-20">
         <CRMTopBar />
-
-        {/* Content row: sidebar (desktop) + scrollable main */}
         <div className="flex flex-1">
           <CRMSidebar />
           <main
@@ -38,8 +35,6 @@ export default function CRMLayout({
           </main>
         </div>
       </div>
-
-      {/* Mobile bottom nav — fixed, outside the content flow */}
       <CRMBottomNav />
     </CRMRoleProvider>
   );
