@@ -31,9 +31,18 @@ const STATUS_LABEL: Record<string, string> = {
 interface LeadTableRowProps {
   lead: Lead;
   onClick: () => void;
+  showCheckbox?: boolean;
+  selected?: boolean;
+  onSelect?: () => void;
 }
 
-export function LeadTableRow({ lead, onClick }: LeadTableRowProps) {
+export function LeadTableRow({
+  lead,
+  onClick,
+  showCheckbox = false,
+  selected = false,
+  onSelect,
+}: LeadTableRowProps) {
   const initials =
     lead.name
       ?.trim()
@@ -44,14 +53,15 @@ export function LeadTableRow({ lead, onClick }: LeadTableRowProps) {
       .join('')
       .toUpperCase() || '?';
 
-  const phoneLink = lead.phone ? `tel:${lead.phone}` : '#';
+  // ✅ Fixed: use lead.mobile (not lead.phone) — matches your Lead type
+  const phoneLink = lead.mobile ? `tel:${lead.mobile}` : '#';
   const statusBadge = STATUS_BADGE[lead.status] ?? STATUS_BADGE.new;
   const statusLabel = STATUS_LABEL[lead.status] ?? lead.status;
 
   return (
     <tr
       onClick={onClick}
-      className="cursor-pointer transition-colors hover:bg-muted/40"
+      className={`cursor-pointer transition-colors hover:bg-muted/40${selected ? ' bg-primary/5' : ''}`}
       tabIndex={0}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -61,12 +71,27 @@ export function LeadTableRow({ lead, onClick }: LeadTableRowProps) {
       }}
       aria-label={`Open lead ${lead.name}`}
     >
+      {showCheckbox && (
+        <td className="w-10 px-4 py-3 sm:px-5">
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={(e) => {
+              e.stopPropagation();
+              onSelect?.();
+            }}
+            onClick={(e) => e.stopPropagation()}
+            className="h-4 w-4 rounded cursor-pointer"
+            aria-label={`Select lead ${lead.name}`}
+          />
+        </td>
+      )}
+
       <td className="px-4 py-3 sm:px-5">
         <div className="flex items-center gap-3">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
             {initials}
           </div>
-
           <div className="min-w-0">
             <p className="truncate font-medium text-foreground">{lead.name}</p>
             <p className="truncate text-xs text-muted-foreground">{lead.email}</p>
@@ -79,9 +104,7 @@ export function LeadTableRow({ lead, onClick }: LeadTableRowProps) {
       </td>
 
       <td className="hidden px-4 py-3 lg:table-cell lg:px-5">
-        <span
-          className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium ${statusBadge}`}
-        >
+        <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium ${statusBadge}`}>
           {statusLabel}
         </span>
       </td>
@@ -94,12 +117,10 @@ export function LeadTableRow({ lead, onClick }: LeadTableRowProps) {
         <a
           href={phoneLink}
           className="truncate text-xs font-medium text-primary hover:underline sm:text-sm"
-          onClick={(e) => {
-            e.stopPropagation();
-          }}
+          onClick={(e) => e.stopPropagation()}
           aria-label={`Call ${lead.name}`}
         >
-          {lead.phone}
+          {lead.mobile}
         </a>
       </td>
     </tr>

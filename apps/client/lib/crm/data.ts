@@ -29,6 +29,7 @@ export const DEMO_USER_ID: Record<Role, string> = {
   super_admin:     'tm-001', // Rajesh Kumar
   admin:           'tm-002', // Priya Sharma
   team_lead:       'tm-003', // Amit Verma
+  marketing:       'tm-009', // Neha Sharma
   sales_executive: 'tm-004', // Rohan Gupta
   support_agent:   'tm-007', // Deepika Reddy
   student:         'sp-001', // Tanvi Saxena (StudentProfile, not TeamMember)
@@ -125,6 +126,20 @@ export const TEAM_MEMBERS: TeamMember[] = [
     joinedAt: '2024-05-15T00:00:00Z',
     lastActiveAt: '2026-06-03T09:05:00Z',
   },
+
+  // In TEAM_MEMBERS array, add:
+  {
+    id: 'tm-009',
+    name: 'Neha Sharma',
+    email: 'neha.sharma@helpingbots.in',
+    mobile: '+91-9876543207',
+    role: 'marketing',
+    status: 'active',
+    department: 'Student Success',
+    joinedAt: '2024-05-15T00:00:00Z',
+    lastActiveAt: '2026-06-03T09:05:00Z',
+  },
+
 ];
 
 // ─── Leads ────────────────────────────────────────────────────────────────────

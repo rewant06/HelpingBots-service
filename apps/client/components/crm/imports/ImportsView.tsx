@@ -1,7 +1,7 @@
 'use client';
 
-import { useMemo, useState, useRef } from 'react';
-import { Upload, FileUp, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
+import { Upload, FileUp } from 'lucide-react';
 import { useCRMRole } from '@/lib/crm/role-context';
 import { IMPORT_JOBS } from '@/lib/crm/data';
 import type { ImportJob } from '@/lib/crm/types';
@@ -17,21 +17,18 @@ const STATUS_OPTIONS = [
 ];
 
 export function ImportsView() {
-  const { can, activeRole } = useCRMRole();
+  const { can } = useCRMRole();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedJob, setSelectedJob] = useState<ImportJob | null>(null);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
 
-  // ─── Data filtering ───────────────────────────────────────────────────────
-
   const filteredJobs = useMemo(() => {
-    let base = IMPORT_JOBS;
+    const base =
+      selectedStatuses.length > 0
+        ? IMPORT_JOBS.filter((job) => selectedStatuses.includes(job.status))
+        : IMPORT_JOBS;
 
-    if (selectedStatuses.length > 0) {
-      base = base.filter((job) => selectedStatuses.includes(job.status));
-    }
-
-    return base.sort(
+    return [...base].sort(
       (a, b) =>
         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
     );
@@ -46,30 +43,38 @@ export function ImportsView() {
     };
   }, []);
 
-  // ─── Render ───────────────────────────────────────────────────────────────
+  const toggleStatus = (value: string) => {
+    setSelectedStatuses((prev) =>
+      prev.includes(value)
+        ? prev.filter((status) => status !== value)
+        : [...prev, value],
+    );
+  };
 
   return (
     <div className="flex flex-col gap-6">
-
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-foreground">
             Import Center
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            {stats.total} import{stats.total !== 1 ? 's' : ''} · {stats.pending} pending approval · {stats.failed} failed
+            {stats.total} import{stats.total !== 1 ? 's' : ''} · {stats.pending}{' '}
+            pending approval · {stats.failed} failed
           </p>
         </div>
+
         {can('imports.upload') && (
           <>
             <button
+              type="button"
               onClick={() => fileInputRef.current?.click()}
               className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
             >
               <Upload className="h-4 w-4" aria-hidden="true" />
               Upload CSV
             </button>
+
             <input
               ref={fileInputRef}
               type="file"
@@ -81,34 +86,36 @@ export function ImportsView() {
         )}
       </div>
 
-      {/* ── Summary cards ──────────────────────────────────────────────────── */}
       <div className="grid grid-cols-4 gap-2 sm:gap-4">
         <div className="rounded-lg border border-border bg-card p-3 sm:p-4">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Total
           </p>
           <p className="mt-2 text-2xl font-bold text-foreground">
             {stats.total}
           </p>
         </div>
+
         <div className="rounded-lg border border-border bg-card p-3 sm:p-4">
-          <p className="text-xs font-medium text-amber-600 dark:text-amber-400 uppercase tracking-wide">
+          <p className="text-xs font-medium uppercase tracking-wide text-amber-600 dark:text-amber-400">
             Pending
           </p>
           <p className="mt-2 text-2xl font-bold text-amber-700 dark:text-amber-300">
             {stats.pending}
           </p>
         </div>
+
         <div className="rounded-lg border border-border bg-card p-3 sm:p-4">
-          <p className="text-xs font-medium text-red-600 dark:text-red-400 uppercase tracking-wide">
+          <p className="text-xs font-medium uppercase tracking-wide text-red-600 dark:text-red-400">
             Failed
           </p>
           <p className="mt-2 text-2xl font-bold text-red-700 dark:text-red-300">
             {stats.failed}
           </p>
         </div>
+
         <div className="rounded-lg border border-border bg-card p-3 sm:p-4">
-          <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">
+          <p className="text-xs font-medium uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
             Imported
           </p>
           <p className="mt-2 text-2xl font-bold text-emerald-700 dark:text-emerald-300">
@@ -117,34 +124,35 @@ export function ImportsView() {
         </div>
       </div>
 
-      {/* ── Status filters ──────────────────────────────────────────────────── */}
       <div className="flex flex-wrap gap-2">
-        {STATUS_OPTIONS.map((opt) => (
-          <button
-            key={opt.value}
-            onClick={() => {
-              if (selectedStatuses.includes(opt.value)) {
-                setSelectedStatuses(selectedStatuses.filter((s) => s !== opt.value));
-              } else {
-                setSelectedStatuses([...selectedStatuses, opt.value]);
-              }
-            }}
-            className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
-              selectedStatuses.includes(opt.value)
-                ? 'bg-primary text-primary-foreground'
-                : 'border border-border bg-background hover:bg-muted'
-            }`}
-          >
-            {opt.label}
-          </button>
-        ))}
+        {STATUS_OPTIONS.map((opt) => {
+          const isSelected = selectedStatuses.includes(opt.value);
+
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => toggleStatus(opt.value)}
+              className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                isSelected
+                  ? 'bg-primary text-primary-foreground'
+                  : 'border border-border bg-background hover:bg-muted'
+              }`}
+              aria-pressed={isSelected}
+            >
+              {opt.label}
+            </button>
+          );
+        })}
       </div>
 
-      {/* ── Import Jobs Table ───────────────────────────────────────────────── */}
       <div className="overflow-hidden rounded-xl border border-border">
         {filteredJobs.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 bg-card py-16 text-center">
-            <FileUp className="h-12 w-12 text-muted-foreground/40" aria-hidden="true" />
+            <FileUp
+              className="h-12 w-12 text-muted-foreground/40"
+              aria-hidden="true"
+            />
             <p className="text-base font-medium text-foreground">
               No imports found
             </p>
@@ -173,6 +181,7 @@ export function ImportsView() {
                   </th>
                 </tr>
               </thead>
+
               <tbody className="divide-y divide-border">
                 {filteredJobs.map((job) => (
                   <ImportJobRow
@@ -187,7 +196,6 @@ export function ImportsView() {
         )}
       </div>
 
-      {/* ── Import Detail Drawer ─────────────────────────────────────────── */}
       {selectedJob && (
         <ImportDrawer
           job={selectedJob}

@@ -4,6 +4,7 @@ export type Role =
   | 'super_admin'
   | 'admin'
   | 'team_lead'
+  | 'marketing'
   | 'sales_executive'
   | 'support_agent'
   | 'student';
@@ -410,6 +411,7 @@ export type PermissionKey =
   | 'analytics.view'
   | 'settings.view'
   | 'settings.manage'
+  | 'leads.bulk_assign'
   | 'student_portal.view';
 
 export type PermissionMatrix = Record<Role, PermissionKey[]>;

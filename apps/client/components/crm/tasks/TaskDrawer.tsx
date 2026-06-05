@@ -3,6 +3,8 @@
 import { X, CheckCircle2, Clock, AlertCircle } from 'lucide-react';
 import { useCRMRole } from '@/lib/crm/role-context';
 import type { Task } from '@/lib/crm/types';
+import { useMemo } from 'react';
+
 
 interface TaskDrawerProps {
   task: Task;
@@ -18,11 +20,14 @@ export function TaskDrawer({ task, onClose, onUpdate }: TaskDrawerProps) {
     onUpdate(updated);
   };
 
-  const dueDateObj = new Date(task.dueDate);
-  const daysUntilDue = Math.floor(
-    (dueDateObj.getTime() - Date.now()) / (1000 * 60 * 60 * 24),
-  );
+ const dueDateObj = useMemo(() => new Date(task.dueDate), [task.dueDate]);
 
+const daysUntilDue = useMemo(() => {
+  const now = new Date();
+  return Math.floor(
+    (dueDateObj.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
+  );
+}, [dueDateObj]);
   const dueDateStr =
     task.status === 'completed'
       ? 'Completed'
@@ -168,7 +173,7 @@ export function TaskDrawer({ task, onClose, onUpdate }: TaskDrawerProps) {
           </div>
 
           {/* Action buttons */}
-          {can('tasks.edit') && (
+          {can('tasks.create') && (
             <div className="flex flex-col gap-2">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Mark as

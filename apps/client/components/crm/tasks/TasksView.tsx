@@ -54,7 +54,7 @@ export function TasksView() {
       base = base.filter(
         (t) =>
           t.title.toLowerCase().includes(q) ||
-          t.description.toLowerCase().includes(q) ||
+          (t.description ?? '').toLowerCase().includes(q) ||
           t.leadName.toLowerCase().includes(q),
       );
     }
@@ -100,7 +100,6 @@ export function TasksView() {
 
     return base;
   }, [
-    activeRole,
     currentUserId,
     can,
     searchQuery,

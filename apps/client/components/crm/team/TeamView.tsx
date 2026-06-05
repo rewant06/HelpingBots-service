@@ -11,6 +11,7 @@ const ROLE_DOT: Record<Role, string> = {
   super_admin: 'bg-purple-600',
   admin: 'bg-blue-600',
   team_lead: 'bg-emerald-600',
+  marketing: 'bg-pink-600',
   sales_executive: 'bg-amber-600',
   support_agent: 'bg-pink-600',
   student: 'bg-slate-600',
@@ -168,8 +169,8 @@ export function TeamView() {
                 </div>
                 <div className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors">
                   <Phone className="h-3 w-3 shrink-0" aria-hidden="true" />
-                  <a href={`tel:${member.phone}`} className="truncate">
-                    {member.phone}
+                  <a href={`tel:${member.mobile}`} className="truncate">
+                    {member.mobile}
                   </a>
                 </div>
               </div>

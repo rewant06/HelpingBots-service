@@ -25,6 +25,7 @@ export const ALL_ROLES: Role[] = [
   "super_admin",
   "admin",
   "team_lead",
+  "marketing",
   "sales_executive",
   "support_agent",
   "student",

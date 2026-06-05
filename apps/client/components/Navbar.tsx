@@ -51,7 +51,7 @@ export function Navbar() {
 
   const isActive = (path: string) => pathname === path;
 
-  if (pathname.startsWith("/dashboard")) {
+  if (pathname.startsWith("/dashboard") || pathname.startsWith("/crm")) {
     return null;
   }
 

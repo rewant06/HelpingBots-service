@@ -10,6 +10,7 @@ const PERMISSIONS: PermissionMatrix = {
     'dashboard.view',
     'dashboard.view_team',
     'dashboard.view_global',
+    'leads.bulk_assign',
     'leads.view_own',
     'leads.view_team',
     'leads.view_all',
@@ -42,6 +43,7 @@ const PERMISSIONS: PermissionMatrix = {
     'dashboard.view',
     'dashboard.view_team',
     'dashboard.view_global',
+    'leads.bulk_assign',
     'leads.view_own',
     'leads.view_team',
     'leads.view_all',
@@ -72,6 +74,7 @@ const PERMISSIONS: PermissionMatrix = {
   team_lead: [
     'dashboard.view',
     'dashboard.view_team',
+    'leads.bulk_assign',
     'leads.view_own',
     'leads.view_team',
     'leads.view_all',
@@ -92,6 +95,18 @@ const PERMISSIONS: PermissionMatrix = {
     // NO leaderboard, NO analytics, NO settings
   ],
 
+  // In PERMISSIONS matrix, add:
+marketing: [
+
+  'dashboard.view',
+  'leads.view_own',
+  'leads.create',
+  'leads.edit_own',
+  'tasks.view_own',
+  'tasks.create',
+
+],
+
   sales_executive: [
     'dashboard.view',
     'leads.view_own',
@@ -99,6 +114,7 @@ const PERMISSIONS: PermissionMatrix = {
     'leads.edit_own',
     'tasks.view_own',
     'tasks.create',
+    'leads.edit_own',
     'tasks.complete',
     'payments.view_own',
     // NO team, NO imports, NO leaderboard, NO analytics, NO settings
@@ -153,6 +169,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   super_admin: 'Super Admin',
   admin: 'Admin',
   team_lead: 'Team Lead',
+  marketing: 'Marketing Exec',
   sales_executive: 'Sales Executive',
   support_agent: 'Support Agent',
   student: 'Student',
@@ -162,6 +179,7 @@ export const ROLE_DESCRIPTIONS: Record<Role, string> = {
   super_admin: 'Full system access — founder / owner view',
   admin: 'Full CRM operations, no leaderboard',
   team_lead: 'Team management, assignment, import upload',
+  marketing: 'Generates leads from campaigns and outreach activities',
   sales_executive: 'Own assigned leads and tasks only',
   support_agent: 'Enrolled leads, onboarding and fee follow-up',
   student: 'Read-only self-service portal',
@@ -172,6 +190,7 @@ export const ROLE_ORDER: Role[] = [
   'super_admin',
   'admin',
   'team_lead',
+  'marketing',
   'sales_executive',
   'support_agent',
   'student',

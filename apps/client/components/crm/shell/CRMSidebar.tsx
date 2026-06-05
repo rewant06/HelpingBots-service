@@ -12,6 +12,7 @@ const AVATAR_BG: Record<Role, string> = {
   super_admin:     'bg-primary text-primary-foreground',
   admin:           'bg-secondary text-secondary-foreground',
   team_lead:       'bg-orange-500 text-white',
+  marketing:       'bg-pink-500 text-white',
   sales_executive: 'bg-blue-500 text-white',
   support_agent:   'bg-emerald-500 text-white',
   student:         'bg-sky-500 text-white',

@@ -15,7 +15,7 @@ const Footer = () => {
   const { toast } = useToast();
   const pathname = usePathname();
 
-  if (pathname.startsWith("/dashboard")) {
+  if (pathname.startsWith("/dashboard") || pathname.startsWith("/crm")) {
 return null;
   }
 
