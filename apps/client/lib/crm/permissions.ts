@@ -95,17 +95,15 @@ const PERMISSIONS: PermissionMatrix = {
     // NO leaderboard, NO analytics, NO settings
   ],
 
-  // In PERMISSIONS matrix, add:
-marketing: [
-
-  'dashboard.view',
-  'leads.view_own',
-  'leads.create',
-  'leads.edit_own',
-  'tasks.view_own',
-  'tasks.create',
-
-],
+  marketing: [
+    'dashboard.view',
+    'leads.view_own',
+    'leads.create',
+    'leads.edit_own',
+    'tasks.view_own',
+    'tasks.create',
+    'tasks.complete',
+  ],
 
   sales_executive: [
     'dashboard.view',
@@ -114,7 +112,6 @@ marketing: [
     'leads.edit_own',
     'tasks.view_own',
     'tasks.create',
-    'leads.edit_own',
     'tasks.complete',
     'payments.view_own',
     // NO team, NO imports, NO leaderboard, NO analytics, NO settings
@@ -142,6 +139,7 @@ marketing: [
   ],
 };
 
+
 // ─── Core Permission Check ────────────────────────────────────────────────────
 // Usage: can('team_lead', 'imports.approve') → false
 // Usage: can('super_admin', 'leaderboard.view') → true
@@ -151,13 +149,11 @@ export function can(role: Role, permission: PermissionKey): boolean {
 }
 
 // Checks if a role has ANY of the provided permissions.
-// Useful for: show a section if the user can do at least one thing in it.
 export function canAny(role: Role, permissions: PermissionKey[]): boolean {
   return permissions.some((p) => can(role, p));
 }
 
 // Checks if a role has ALL of the provided permissions.
-// Useful for: show an advanced action that requires multiple permissions.
 export function canAll(role: Role, permissions: PermissionKey[]): boolean {
   return permissions.every((p) => can(role, p));
 }
@@ -166,23 +162,23 @@ export function canAll(role: Role, permissions: PermissionKey[]): boolean {
 // Used by the demo role switcher UI.
 
 export const ROLE_LABELS: Record<Role, string> = {
-  super_admin: 'Super Admin',
-  admin: 'Admin',
-  team_lead: 'Team Lead',
-  marketing: 'Marketing Exec',
+  super_admin:     'Super Admin',
+  admin:           'Admin',
+  team_lead:       'Team Lead',
+  marketing:       'Marketing Exec',
   sales_executive: 'Sales Executive',
-  support_agent: 'Support Agent',
-  student: 'Student',
+  support_agent:   'Support Agent',
+  student:         'Student',
 };
 
 export const ROLE_DESCRIPTIONS: Record<Role, string> = {
-  super_admin: 'Full system access — founder / owner view',
-  admin: 'Full CRM operations, no leaderboard',
-  team_lead: 'Team management, assignment, import upload',
-  marketing: 'Generates leads from campaigns and outreach activities',
+  super_admin:     'Full system access — founder / owner view',
+  admin:           'Full CRM operations, no leaderboard',
+  team_lead:       'Team management, assignment, import upload',
+  marketing:       'Creates and manages own leads from campaigns',
   sales_executive: 'Own assigned leads and tasks only',
-  support_agent: 'Enrolled leads, onboarding and fee follow-up',
-  student: 'Read-only self-service portal',
+  support_agent:   'Enrolled leads, onboarding and fee follow-up',
+  student:         'Read-only self-service portal',
 };
 
 // Role display order for the switcher (most privileged → least)
@@ -198,61 +194,63 @@ export const ROLE_ORDER: Role[] = [
 
 // ─── Navigation Items ─────────────────────────────────────────────────────────
 // Each item declares which roles can see it.
-// The sidebar and bottom nav filter this list by the active role.
-// iconName must match a valid Lucide icon name exactly.
+// iconName must match a valid key in CRM_ICON_MAP exactly.
 
 export const NAV_ITEMS: NavItem[] = [
   {
-    id: 'dashboard',
-    label: 'Dashboard',
-    href: '/crm/dashboard',
-    iconName: 'LayoutDashboard',
+    id:           'dashboard',
+    label:        'Dashboard',
+    href:         '/crm/dashboard',
+    iconName:     'LayoutDashboard',
     allowedRoles: [
       'super_admin',
       'admin',
       'team_lead',
+      'marketing',         // ← FIXED: was missing
       'sales_executive',
       'support_agent',
     ],
   },
   {
-    id: 'portal',
-    label: 'My Portal',
-    href: '/crm/portal',
-    iconName: 'GraduationCap',
+    id:           'portal',
+    label:        'My Portal',
+    href:         '/crm/portal',
+    iconName:     'GraduationCap',
     allowedRoles: ['student'],
   },
   {
-    id: 'leads',
-    label: 'Leads',
-    href: '/crm/leads',
-    iconName: 'Users',
+    id:           'leads',
+    label:        'Leads',
+    href:         '/crm/leads',
+    iconName:     'Users',
     allowedRoles: [
       'super_admin',
       'admin',
       'team_lead',
+      'marketing',         // ← FIXED: was missing
       'sales_executive',
       'support_agent',
     ],
   },
   {
-    id: 'tasks',
-    label: 'Tasks',
-    href: '/crm/tasks',
-    iconName: 'CheckSquare',
+    id:           'tasks',
+    label:        'Tasks',
+    href:         '/crm/tasks',
+    iconName:     'CheckSquare',
     allowedRoles: [
       'super_admin',
       'admin',
       'team_lead',
+      'marketing',         // ← FIXED: was missing
       'sales_executive',
       'support_agent',
     ],
   },
   {
-    id: 'payments',
-    label: 'Payments',
-    href: '/crm/payments',
-    iconName: 'CreditCard',
+    id:           'payments',
+    label:        'Payments',
+    href:         '/crm/payments',
+    iconName:     'CreditCard',
     allowedRoles: [
       'super_admin',
       'admin',
@@ -263,38 +261,38 @@ export const NAV_ITEMS: NavItem[] = [
     ],
   },
   {
-    id: 'imports',
-    label: 'Import Center',
-    href: '/crm/imports',
-    iconName: 'Upload',
+    id:           'imports',
+    label:        'Import Center',
+    href:         '/crm/imports',
+    iconName:     'Upload',
     allowedRoles: ['super_admin', 'admin', 'team_lead'],
   },
   {
-    id: 'team',
-    label: 'Team',
-    href: '/crm/team',
-    iconName: 'Users2',
+    id:           'team',
+    label:        'Team',
+    href:         '/crm/team',
+    iconName:     'Users2',
     allowedRoles: ['super_admin', 'admin', 'team_lead'],
   },
   {
-    id: 'leaderboard',
-    label: 'Leaderboard',
-    href: '/crm/leaderboard',
-    iconName: 'Trophy',
+    id:           'leaderboard',
+    label:        'Leaderboard',
+    href:         '/crm/leaderboard',
+    iconName:     'Trophy',
     allowedRoles: ['super_admin'],
   },
   {
-    id: 'analytics',
-    label: 'Analytics',
-    href: '/crm/analytics',
-    iconName: 'BarChart3',
+    id:           'analytics',
+    label:        'Analytics',
+    href:         '/crm/analytics',
+    iconName:     'BarChart3',
     allowedRoles: ['super_admin', 'admin'],
   },
   {
-    id: 'settings',
-    label: 'Settings',
-    href: '/crm/settings',
-    iconName: 'Settings',
+    id:           'settings',
+    label:        'Settings',
+    href:         '/crm/settings',
+    iconName:     'Settings',
     allowedRoles: ['super_admin', 'admin'],
   },
 ];

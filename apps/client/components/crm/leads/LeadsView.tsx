@@ -1,145 +1,155 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Search, ChevronDown, Plus, UserCheck, X } from 'lucide-react';
+import { Search, Plus, UserCheck, ChevronDown, X } from 'lucide-react';
 import { useCRMRole } from '@/lib/crm/role-context';
 import { LEADS, TEAM_MEMBERS } from '@/lib/crm/data';
-import type { Lead, LeadStatus, LeadPriority, LeadSource } from '@/lib/crm/types';
-import { LeadDrawer } from './LeadDrawer';
-import { LeadTableRow } from './LeadTableRow';
+import type { Lead, LeadPriority, LeadSource, LeadStatus } from '@/lib/crm/types';
+import { LeadDrawer }      from './LeadDrawer';
+import { LeadTableRow }    from './LeadTableRow';
+import { CreateLeadModal } from './CreateLeadModal';
+import {
+  FilterDropdown,
+  FilterOption,
+  SortDropdown,
+} from '@/components/crm/shared/FilterDropdown';
+
+// ─── Filter option lists ──────────────────────────────────────────────────────
 
 const STATUS_OPTIONS: { value: LeadStatus; label: string }[] = [
-  { value: 'new', label: 'New' },
-  { value: 'contacted', label: 'Contacted' },
-  { value: 'interested', label: 'Interested' },
-  { value: 'follow_up', label: 'Follow-up' },
-  { value: 'application_started', label: 'Application Started' },
-  { value: 'application_submitted', label: 'Application Submitted' },
-  { value: 'admission_confirmed', label: 'Admission Confirmed' },
-  { value: 'enrolled', label: 'Enrolled' },
-  { value: 'lost', label: 'Lost' },
-  { value: 'on_hold', label: 'On Hold' },
+  { value: 'new',                    label: 'New' },
+  { value: 'contacted',              label: 'Contacted' },
+  { value: 'interested',             label: 'Interested' },
+  { value: 'follow_up',              label: 'Follow-up' },
+  { value: 'application_started',    label: 'Application Started' },
+  { value: 'application_submitted',  label: 'Application Submitted' },
+  { value: 'admission_confirmed',    label: 'Admission Confirmed' },
+  { value: 'enrolled',               label: 'Enrolled' },
+  { value: 'lost',                   label: 'Lost' },
+  { value: 'on_hold',                label: 'On Hold' },
 ];
 
 const PRIORITY_OPTIONS: { value: LeadPriority; label: string }[] = [
-  { value: 'high', label: 'High' },
+  { value: 'high',   label: 'High' },
   { value: 'medium', label: 'Medium' },
-  { value: 'low', label: 'Low' },
+  { value: 'low',    label: 'Low' },
 ];
 
 const SOURCE_OPTIONS: { value: LeadSource; label: string }[] = [
-  { value: 'website', label: 'Website' },
-  { value: 'google_ads', label: 'Google Ads' },
-  { value: 'referral', label: 'Referral' },
-  { value: 'whatsapp', label: 'WhatsApp' },
-  { value: 'social_media', label: 'Social Media' },
-  { value: 'walk_in', label: 'Walk-in' },
-  { value: 'event', label: 'Event' },
+  { value: 'website',        label: 'Website' },
+  { value: 'google_ads',     label: 'Google Ads' },
+  { value: 'referral',       label: 'Referral' },
+  { value: 'whatsapp',       label: 'WhatsApp' },
+  { value: 'social_media',   label: 'Social Media' },
+  { value: 'walk_in',        label: 'Walk-in' },
+  { value: 'event',          label: 'Event' },
 ];
 
-const SALES_MEMBERS = TEAM_MEMBERS.filter((member) =>
-  ['sales_executive', 'support_agent'].includes(member.role),
+const SORT_OPTIONS: { value: 'updated' | 'created' | 'name'; label: string }[] = [
+  { value: 'updated', label: 'Recently Updated' },
+  { value: 'created', label: 'Recently Created' },
+  { value: 'name',    label: 'Name (A–Z)' },
+];
+
+const SALES_MEMBERS = TEAM_MEMBERS.filter((m) =>
+  ['sales_executive', 'support_agent', 'team_lead'].includes(m.role),
 );
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export function LeadsView() {
   const { activeRole, currentUserId, can } = useCRMRole();
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedStatuses, setSelectedStatuses] = useState<LeadStatus[]>([]);
-  const [selectedPriorities, setSelectedPriorities] = useState<LeadPriority[]>([]);
-  const [selectedSources, setSelectedSources] = useState<LeadSource[]>([]);
-  const [selectedAssignee, setSelectedAssignee] = useState<string | null>(null);
-  const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
-  const [sortBy, setSortBy] = useState<'name' | 'created' | 'updated'>('updated');
+  // ── Locally created leads ─────────────────────────────────────────────────
+  const [createdLeads, setCreatedLeads] = useState<Lead[]>([]);
 
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [showBulkAssign, setShowBulkAssign] = useState(false);
+  // ── Filter / sort state ───────────────────────────────────────────────────
+  const [searchQuery,        setSearchQuery]        = useState('');
+  const [selectedStatuses,   setSelectedStatuses]   = useState<LeadStatus[]>([]);
+  const [selectedPriorities, setSelectedPriorities] = useState<LeadPriority[]>([]);
+  const [selectedSources,    setSelectedSources]    = useState<LeadSource[]>([]);
+  const [selectedAssignee,   setSelectedAssignee]   = useState<string | null>(null);
+  const [sortBy,             setSortBy]             = useState<'updated' | 'created' | 'name'>('updated');
+
+  // ── Selection + bulk assign state ────────────────────────────────────────
+  const [selectedIds,    setSelectedIds]    = useState<Set<string>>(new Set());
+  const [showBulkMenu,   setShowBulkMenu]   = useState(false);
+
+  // ── Drawer / modal state ──────────────────────────────────────────────────
+  const [selectedLead,    setSelectedLead]    = useState<Lead | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   const canBulkAssign = can('leads.bulk_assign');
 
+  // ── Filtered + sorted leads ───────────────────────────────────────────────
   const filteredLeads = useMemo(() => {
+    const allLeads = [...createdLeads, ...LEADS];
+
     let base = can('leads.view_all')
-      ? LEADS
+      ? allLeads
       : activeRole === 'support_agent'
-      ? LEADS.filter((lead) => lead.status === 'enrolled' && lead.assignedTo === currentUserId)
-      : LEADS.filter((lead) => lead.assignedTo === currentUserId);
+      ? allLeads.filter((l) => l.status === 'enrolled' && l.assignedTo === currentUserId)
+      : allLeads.filter((l) => l.assignedTo === currentUserId);
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       base = base.filter(
-        (lead) =>
-          lead.name.toLowerCase().includes(q) ||
-          lead.email.toLowerCase().includes(q) ||
-          lead.mobile.toLowerCase().includes(q) ||
-          lead.program.toLowerCase().includes(q),
+        (l) =>
+          l.name.toLowerCase().includes(q) ||
+          l.email.toLowerCase().includes(q) ||
+          l.mobile.toLowerCase().includes(q) ||
+          l.program.toLowerCase().includes(q),
       );
     }
 
-    if (selectedStatuses.length > 0) {
-      base = base.filter((lead) => selectedStatuses.includes(lead.status));
-    }
-
-    if (selectedPriorities.length > 0) {
-      base = base.filter((lead) => selectedPriorities.includes(lead.priority));
-    }
-
-    if (selectedSources.length > 0) {
-      base = base.filter((lead) => selectedSources.includes(lead.source));
-    }
-
-    if (selectedAssignee) {
-      base = base.filter((lead) => lead.assignedTo === selectedAssignee);
-    }
+    if (selectedStatuses.length   > 0) base = base.filter((l) => selectedStatuses.includes(l.status));
+    if (selectedPriorities.length > 0) base = base.filter((l) => selectedPriorities.includes(l.priority));
+    if (selectedSources.length    > 0) base = base.filter((l) => selectedSources.includes(l.source));
+    if (selectedAssignee)              base = base.filter((l) => l.assignedTo === selectedAssignee);
 
     return [...base].sort((a, b) => {
-      if (sortBy === 'name') return a.name.localeCompare(b.name);
-      if (sortBy === 'created') {
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-      }
+      if (sortBy === 'name')    return a.name.localeCompare(b.name);
+      if (sortBy === 'created') return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
     });
-  }, [
-    activeRole,
-    currentUserId,
-    can,
-    searchQuery,
-    selectedStatuses,
-    selectedPriorities,
-    selectedSources,
-    selectedAssignee,
-    sortBy,
-  ]);
+  }, [createdLeads, activeRole, currentUserId, can, searchQuery, selectedStatuses, selectedPriorities, selectedSources, selectedAssignee, sortBy]);
 
-  const allFilteredIds = filteredLeads.map((lead) => lead.id);
-  const allSelected =
-    allFilteredIds.length > 0 && allFilteredIds.every((id) => selectedIds.has(id));
+  const allFilteredIds = filteredLeads.map((l) => l.id);
+  const allSelected    = allFilteredIds.length > 0 && allFilteredIds.every((id) => selectedIds.has(id));
 
-  function toggleAll() {
-    if (allSelected) {
-      setSelectedIds(new Set());
-      return;
-    }
+  const toggleStatus   = (v: LeadStatus)   => setSelectedStatuses((p)   => p.includes(v) ? p.filter((x) => x !== v) : [...p, v]);
+  const togglePriority = (v: LeadPriority) => setSelectedPriorities((p) => p.includes(v) ? p.filter((x) => x !== v) : [...p, v]);
+  const toggleSource   = (v: LeadSource)   => setSelectedSources((p)    => p.includes(v) ? p.filter((x) => x !== v) : [...p, v]);
+  const toggleAssignee = (id: string)      => setSelectedAssignee((p)   => p === id ? null : id);
 
+  const toggleAll = () => {
+    if (allSelected) { setSelectedIds(new Set()); return; }
     setSelectedIds(new Set(allFilteredIds));
-  }
-
-  function toggleOne(id: string) {
+  };
+  const toggleOne = (id: string) =>
     setSelectedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
-  }
 
-  function handleBulkAssign(memberId: string) {
+  const handleBulkAssign = (memberId: string) => {
+    // In a real app, this would call an API. For demo, clear selection.
     void memberId;
     setSelectedIds(new Set());
-    setShowBulkAssign(false);
-  }
+    setShowBulkMenu(false);
+  };
+
+  const hasActiveFilters =
+    selectedStatuses.length > 0 ||
+    selectedPriorities.length > 0 ||
+    selectedSources.length > 0 ||
+    !!selectedAssignee;
 
   return (
     <div className="flex flex-col gap-6">
+
+      {/* ── Header ──────────────────────────────────────────────────────── */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-foreground">Leads</h2>
@@ -151,6 +161,7 @@ export function LeadsView() {
         {can('leads.create') && (
           <button
             type="button"
+            onClick={() => setShowCreateModal(true)}
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
           >
             <Plus className="h-4 w-4" aria-hidden="true" />
@@ -159,6 +170,7 @@ export function LeadsView() {
         )}
       </div>
 
+      {/* ── Bulk assign bar ──────────────────────────────────────────────── */}
       {canBulkAssign && selectedIds.size > 0 && (
         <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-4 py-2.5">
           <p className="text-sm font-medium text-primary">
@@ -169,47 +181,33 @@ export function LeadsView() {
             <div className="relative">
               <button
                 type="button"
-                onClick={() => setShowBulkAssign((prev) => !prev)}
+                onClick={() => setShowBulkMenu((v) => !v)}
                 className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
               >
                 <UserCheck className="h-3.5 w-3.5" aria-hidden="true" />
                 Assign To
                 <ChevronDown className="h-3 w-3" aria-hidden="true" />
               </button>
-
-              {showBulkAssign && (
+              {showBulkMenu && (
                 <div className="absolute right-0 top-full z-20 mt-1 w-52 overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
                   <div className="p-1">
-                    {SALES_MEMBERS.map((member) => (
+                    {SALES_MEMBERS.map((m) => (
                       <button
-                        key={member.id}
+                        key={m.id}
                         type="button"
-                        onClick={() => handleBulkAssign(member.id)}
+                        onClick={() => handleBulkAssign(m.id)}
                         className="flex w-full items-center gap-2 rounded px-3 py-2 text-sm text-foreground transition-colors hover:bg-muted"
                       >
                         <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
-                          {member.name
-                            .split(' ')
-                            .map((part) => part[0])
-                            .join('')}
+                          {m.name.split(' ').map((n) => n[0]).join('')}
                         </div>
-                        <span className="truncate">{member.name}</span>
+                        <span className="truncate">{m.name}</span>
                       </button>
                     ))}
-                  </div>
-                  <div className="border-t border-border p-1">
-                    <button
-                      type="button"
-                      onClick={() => setShowBulkAssign(false)}
-                      className="w-full rounded px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted"
-                    >
-                      Cancel
-                    </button>
                   </div>
                 </div>
               )}
             </div>
-
             <button
               type="button"
               onClick={() => setSelectedIds(new Set())}
@@ -222,196 +220,131 @@ export function LeadsView() {
         </div>
       )}
 
+      {/* ── Search + Filters ─────────────────────────────────────────────── */}
       <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 sm:p-5">
+
         <div className="relative">
           <Search
-            className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
             aria-hidden="true"
           />
           <input
-            type="text"
-            placeholder="Search by name, email, phone, program..."
+            type="search"
+            placeholder="Search by name, email, mobile, program…"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-3 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          <div className="relative group">
-            <button
-              type="button"
-              className="flex items-center gap-1 rounded-full border border-border bg-muted px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted/80"
-            >
-              Status {selectedStatuses.length > 0 && `(${selectedStatuses.length})`}
-              <ChevronDown className="h-3 w-3" aria-hidden="true" />
-            </button>
-            <div className="absolute left-0 top-full z-10 mt-1 hidden min-w-48 rounded-lg border border-border bg-popover p-2 shadow-lg group-hover:block">
-              {STATUS_OPTIONS.map((opt) => (
-                <label
-                  key={opt.value}
-                  className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedStatuses.includes(opt.value)}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedStatuses((prev) => [...prev, opt.value]);
-                      } else {
-                        setSelectedStatuses((prev) => prev.filter((s) => s !== opt.value));
-                      }
-                    }}
-                    className="h-4 w-4 cursor-pointer rounded"
-                  />
-                  {opt.label}
-                </label>
-              ))}
-            </div>
-          </div>
+        {/* Filters — click-based, all touch-friendly */}
+        <div className="flex flex-wrap items-center gap-2">
 
-          <div className="relative group">
-            <button
-              type="button"
-              className="flex items-center gap-1 rounded-full border border-border bg-muted px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted/80"
-            >
-              Priority {selectedPriorities.length > 0 && `(${selectedPriorities.length})`}
-              <ChevronDown className="h-3 w-3" aria-hidden="true" />
-            </button>
-            <div className="absolute left-0 top-full z-10 mt-1 hidden min-w-40 rounded-lg border border-border bg-popover p-2 shadow-lg group-hover:block">
-              {PRIORITY_OPTIONS.map((opt) => (
-                <label
-                  key={opt.value}
-                  className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedPriorities.includes(opt.value)}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedPriorities((prev) => [...prev, opt.value]);
-                      } else {
-                        setSelectedPriorities((prev) => prev.filter((p) => p !== opt.value));
-                      }
-                    }}
-                    className="h-4 w-4 cursor-pointer rounded"
-                  />
-                  {opt.label}
-                </label>
-              ))}
-            </div>
-          </div>
+          <FilterDropdown label="Status" count={selectedStatuses.length}>
+            {STATUS_OPTIONS.map((opt) => (
+              <FilterOption
+                key={opt.value}
+                label={opt.label}
+                checked={selectedStatuses.includes(opt.value)}
+                onChange={() => toggleStatus(opt.value)}
+              />
+            ))}
+          </FilterDropdown>
 
-          <div className="relative group">
-            <button
-              type="button"
-              className="flex items-center gap-1 rounded-full border border-border bg-muted px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted/80"
-            >
-              Source {selectedSources.length > 0 && `(${selectedSources.length})`}
-              <ChevronDown className="h-3 w-3" aria-hidden="true" />
-            </button>
-            <div className="absolute left-0 top-full z-10 mt-1 hidden max-h-72 min-w-40 overflow-y-auto rounded-lg border border-border bg-popover p-2 shadow-lg group-hover:block">
-              {SOURCE_OPTIONS.map((opt) => (
-                <label
-                  key={opt.value}
-                  className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedSources.includes(opt.value)}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedSources((prev) => [...prev, opt.value]);
-                      } else {
-                        setSelectedSources((prev) => prev.filter((s) => s !== opt.value));
-                      }
-                    }}
-                    className="h-4 w-4 cursor-pointer rounded"
-                  />
-                  {opt.label}
-                </label>
-              ))}
-            </div>
-          </div>
+          <FilterDropdown label="Priority" count={selectedPriorities.length}>
+            {PRIORITY_OPTIONS.map((opt) => (
+              <FilterOption
+                key={opt.value}
+                label={opt.label}
+                checked={selectedPriorities.includes(opt.value)}
+                onChange={() => togglePriority(opt.value)}
+              />
+            ))}
+          </FilterDropdown>
+
+          <FilterDropdown label="Source" count={selectedSources.length}>
+            {SOURCE_OPTIONS.map((opt) => (
+              <FilterOption
+                key={opt.value}
+                label={opt.label}
+                checked={selectedSources.includes(opt.value)}
+                onChange={() => toggleSource(opt.value)}
+              />
+            ))}
+          </FilterDropdown>
 
           {can('leads.view_all') && (
-            <div className="relative group">
-              <button
-                type="button"
-                className="flex items-center gap-1 rounded-full border border-border bg-muted px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted/80"
-              >
-                Assignee {selectedAssignee && '(1)'}
-                <ChevronDown className="h-3 w-3" aria-hidden="true" />
-              </button>
-              <div className="absolute left-0 top-full z-10 mt-1 hidden max-h-72 min-w-48 overflow-y-auto rounded-lg border border-border bg-popover p-2 shadow-lg group-hover:block">
-                <label className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted">
-                  <input
-                    type="checkbox"
-                    checked={selectedAssignee === null}
-                    onChange={() => setSelectedAssignee(null)}
-                    className="h-4 w-4 cursor-pointer rounded"
-                  />
-                  All
-                </label>
-
-                {TEAM_MEMBERS.map((member) => (
-                  <label
-                    key={member.id}
-                    className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedAssignee === member.id}
-                      onChange={() =>
-                        setSelectedAssignee((prev) => (prev === member.id ? null : member.id))
-                      }
-                      className="h-4 w-4 cursor-pointer rounded"
-                    />
-                    {member.name}
-                  </label>
-                ))}
-              </div>
-            </div>
+            <FilterDropdown label="Assignee" count={selectedAssignee ? 1 : 0}>
+              <FilterOption
+                label="All"
+                checked={selectedAssignee === null}
+                onChange={() => setSelectedAssignee(null)}
+              />
+              {TEAM_MEMBERS.filter((m) => m.role !== 'student').map((m) => (
+                <FilterOption
+                  key={m.id}
+                  label={m.name}
+                  checked={selectedAssignee === m.id}
+                  onChange={() => toggleAssignee(m.id)}
+                />
+              ))}
+            </FilterDropdown>
           )}
 
-          <div className="relative group ml-auto">
-            <button
-              type="button"
-              className="flex items-center gap-1 rounded-full border border-border bg-muted px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted/80"
-            >
-              Sort: {sortBy === 'name' ? 'Name' : sortBy === 'created' ? 'Created' : 'Updated'}
-              <ChevronDown className="h-3 w-3" aria-hidden="true" />
-            </button>
-            <div className="absolute right-0 top-full z-10 mt-1 hidden min-w-40 rounded-lg border border-border bg-popover p-1 shadow-lg group-hover:block">
-              {[
-                { value: 'updated' as const, label: 'Most Recently Updated' },
-                { value: 'created' as const, label: 'Recently Created' },
-                { value: 'name' as const, label: 'Name (A-Z)' },
-              ].map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setSortBy(opt.value)}
-                  className={`block w-full rounded px-3 py-1.5 text-left text-sm transition-colors ${
-                    sortBy === opt.value
-                      ? 'bg-primary/10 font-medium text-primary'
-                      : 'text-foreground hover:bg-muted'
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
+          <SortDropdown
+            value={sortBy}
+            options={SORT_OPTIONS}
+            onChange={setSortBy}
+            className="ml-auto"
+          />
         </div>
+
+        {/* Active filter chips */}
+        {hasActiveFilters && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">Active:</span>
+            {selectedStatuses.map((s) => (
+              <button key={s} type="button" onClick={() => toggleStatus(s)}
+                className="flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20">
+                {s.replace(/_/g, ' ')} ×
+              </button>
+            ))}
+            {selectedPriorities.map((p) => (
+              <button key={p} type="button" onClick={() => togglePriority(p)}
+                className="flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20">
+                {p} ×
+              </button>
+            ))}
+            {selectedSources.map((s) => (
+              <button key={s} type="button" onClick={() => toggleSource(s)}
+                className="flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20">
+                {s.replace(/_/g, ' ')} ×
+              </button>
+            ))}
+            {selectedAssignee && (
+              <button type="button" onClick={() => setSelectedAssignee(null)}
+                className="flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20">
+                {TEAM_MEMBERS.find((m) => m.id === selectedAssignee)?.name} ×
+              </button>
+            )}
+            <button type="button"
+              onClick={() => { setSelectedStatuses([]); setSelectedPriorities([]); setSelectedSources([]); setSelectedAssignee(null); }}
+              className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground">
+              Clear all
+            </button>
+          </div>
+        )}
       </div>
 
+      {/* ── Leads table ──────────────────────────────────────────────────── */}
       <div className="overflow-hidden rounded-xl border border-border">
         {filteredLeads.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 bg-card py-16 text-center">
             <p className="text-base font-medium text-foreground">No leads found</p>
             <p className="text-sm text-muted-foreground">
-              Try adjusting your filters or search query
+              {can('leads.create')
+                ? 'Add your first lead with the button above.'
+                : 'Try adjusting your filters or search query.'}
             </p>
           </div>
         ) : (
@@ -430,24 +363,13 @@ export function LeadsView() {
                       />
                     </th>
                   )}
-                  <th className="px-4 py-3 text-left font-semibold text-foreground sm:px-5">
-                    Name
-                  </th>
-                  <th className="hidden px-4 py-3 text-left font-semibold text-foreground sm:table-cell sm:px-5">
-                    Program
-                  </th>
-                  <th className="hidden px-4 py-3 text-left font-semibold text-foreground lg:table-cell lg:px-5">
-                    Status
-                  </th>
-                  <th className="hidden px-4 py-3 text-left font-semibold text-foreground xl:table-cell xl:px-5">
-                    Assigned To
-                  </th>
-                  <th className="px-4 py-3 text-left font-semibold text-foreground sm:px-5">
-                    Contact
-                  </th>
+                  <th className="px-4 py-3 text-left font-semibold text-foreground sm:px-5">Name</th>
+                  <th className="hidden px-4 py-3 text-left font-semibold text-foreground sm:table-cell sm:px-5">Program</th>
+                  <th className="hidden px-4 py-3 text-left font-semibold text-foreground lg:table-cell lg:px-5">Status</th>
+                  <th className="hidden px-4 py-3 text-left font-semibold text-foreground xl:table-cell xl:px-5">Assigned To</th>
+                  <th className="px-4 py-3 text-left font-semibold text-foreground sm:px-5">Contact</th>
                 </tr>
               </thead>
-
               <tbody className="divide-y divide-border">
                 {filteredLeads.map((lead) => (
                   <LeadTableRow
@@ -465,13 +387,23 @@ export function LeadsView() {
         )}
       </div>
 
+      {/* ── Drawers / Modals ─────────────────────────────────────────────── */}
       {selectedLead && (
         <LeadDrawer
           lead={selectedLead}
           onClose={() => setSelectedLead(null)}
-          onUpdate={(updatedLead) => setSelectedLead(updatedLead)}
+          onUpdate={(updated) => setSelectedLead(updated)}
         />
       )}
+
+      <CreateLeadModal
+        open={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onCreated={(lead) => {
+          setCreatedLeads((prev) => [lead, ...prev]);
+          setShowCreateModal(false);
+        }}
+      />
     </div>
   );
 }

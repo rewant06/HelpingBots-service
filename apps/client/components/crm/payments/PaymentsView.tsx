@@ -1,280 +1,280 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Search, ChevronDown, Plus } from 'lucide-react';
+import { Search, Plus } from 'lucide-react';
 import { useCRMRole } from '@/lib/crm/role-context';
-import { PAYMENTS, LEADS, PAYMENT_TRANSACTIONS } from '@/lib/crm/data';
-import type { Payment, PaymentStatus, PaymentMethod } from '@/lib/crm/types';
-import { PaymentDrawer } from './PaymentDrawer';
-import { PaymentTableRow } from './PaymentTableRow';
+import { LEADS, PAYMENTS, PAYMENT_TRANSACTIONS } from '@/lib/crm/data';
+import type { Payment, PaymentMethod, PaymentStatus } from '@/lib/crm/types';
+import { PaymentDrawer }      from './PaymentDrawer';
+import { PaymentTableRow }    from './PaymentTableRow';
+import { CreatePaymentModal } from './CreatePaymentModal';
+import {
+  FilterDropdown,
+  FilterOption,
+  SortDropdown,
+} from '@/components/crm/shared/FilterDropdown';
+
+// ─── Filter / sort options ────────────────────────────────────────────────────
 
 const STATUS_OPTIONS: { value: PaymentStatus; label: string }[] = [
-  { value: 'pending', label: 'Pending' },
+  { value: 'pending',        label: 'Pending' },
   { value: 'partially_paid', label: 'Partially Paid' },
-  { value: 'paid', label: 'Paid' },
+  { value: 'paid',           label: 'Paid' },
+  { value: 'overdue',        label: 'Overdue' },
 ];
 
 const METHOD_OPTIONS: { value: PaymentMethod; label: string }[] = [
-  { value: 'upi', label: 'UPI' },
+  { value: 'upi',           label: 'UPI' },
   { value: 'bank_transfer', label: 'Bank Transfer' },
+  { value: 'card',          label: 'Card' },
+  { value: 'cash',          label: 'Cash' },
+  { value: 'cheque',        label: 'Cheque' },
 ];
+
+const SORT_OPTIONS: { value: 'dueDate' | 'amount' | 'created'; label: string }[] = [
+  { value: 'dueDate',  label: 'Due Date' },
+  { value: 'amount',   label: 'Amount (High–Low)' },
+  { value: 'created',  label: 'Recently Created' },
+];
+
+function fmt(amount: number) {
+  return `₹${(amount / 100_000).toFixed(1)}L`;
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export function PaymentsView() {
   const { activeRole, currentUserId, can } = useCRMRole();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedStatuses, setSelectedStatuses] = useState<PaymentStatus[]>([]);
-  const [selectedMethods, setSelectedMethods] = useState<PaymentMethod[]>([]);
-  const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
-  const [sortBy, setSortBy] = useState<'dueDate' | 'amount' | 'created'>('dueDate');
 
+  // ── Locally created payments ──────────────────────────────────────────────
+  const [createdPayments, setCreatedPayments] = useState<Payment[]>([]);
+
+  // ── Filter / sort state ───────────────────────────────────────────────────
+  const [searchQuery,       setSearchQuery]       = useState('');
+  const [selectedStatuses,  setSelectedStatuses]  = useState<PaymentStatus[]>([]);
+  const [selectedMethods,   setSelectedMethods]   = useState<PaymentMethod[]>([]);
+  const [sortBy,            setSortBy]            = useState<'dueDate' | 'amount' | 'created'>('dueDate');
+
+  // ── Drawer / modal state ──────────────────────────────────────────────────
+  const [selectedPayment,  setSelectedPayment]  = useState<Payment | null>(null);
+  const [showCreateModal,  setShowCreateModal]  = useState(false);
+
+  // ── Filtered + sorted payments ────────────────────────────────────────────
   const filteredPayments = useMemo(() => {
+    const allPayments = [...createdPayments, ...PAYMENTS];
+
     let base = can('payments.view_all')
-      ? [...PAYMENTS]
+      ? allPayments
       : activeRole === 'support_agent'
-      ? PAYMENTS.filter((payment) => {
-          const lead = LEADS.find((leadItem) => leadItem.id === payment.leadId);
+      ? allPayments.filter((p) => {
+          const lead = LEADS.find((l) => l.id === p.leadId);
           return lead?.status === 'enrolled' && lead?.assignedTo === currentUserId;
         })
-      : PAYMENTS.filter((payment) => {
-          const lead = LEADS.find((leadItem) => leadItem.id === payment.leadId);
+      : allPayments.filter((p) => {
+          const lead = LEADS.find((l) => l.id === p.leadId);
           return lead?.assignedTo === currentUserId;
         });
 
     if (searchQuery.trim()) {
-      const q = searchQuery.trim().toLowerCase();
-
-      base = base.filter((payment) => {
-        const lead = LEADS.find((leadItem) => leadItem.id === payment.leadId);
-
-        return (
-          payment.leadName.toLowerCase().includes(q) ||
-          payment.program.toLowerCase().includes(q) ||
-          payment.invoiceNumber?.toLowerCase().includes(q) ||
-          lead?.name.toLowerCase().includes(q) ||
-          lead?.email.toLowerCase().includes(q) ||
-          lead?.mobile.toLowerCase().includes(q)
-        );
-      });
+      const q = searchQuery.toLowerCase();
+      base = base.filter(
+        (p) =>
+          p.leadName.toLowerCase().includes(q) ||
+          p.program.toLowerCase().includes(q) ||
+          (p.invoiceNumber ?? '').toLowerCase().includes(q),
+      );
     }
 
-    if (selectedStatuses.length > 0) {
-      base = base.filter((payment) => selectedStatuses.includes(payment.status));
-    }
+    if (selectedStatuses.length > 0)
+      base = base.filter((p) => selectedStatuses.includes(p.status));
 
     if (selectedMethods.length > 0) {
-      base = base.filter((payment) => {
-        const paymentMethods = PAYMENT_TRANSACTIONS
-          .filter((txn) => txn.paymentId === payment.id)
-          .map((txn) => txn.method);
-
-        return paymentMethods.some((method) => selectedMethods.includes(method));
+      base = base.filter((p) => {
+        const methods = PAYMENT_TRANSACTIONS
+          .filter((t) => t.paymentId === p.id)
+          .map((t) => t.method);
+        return methods.some((m) => selectedMethods.includes(m));
       });
     }
 
-    base.sort((a, b) => {
-      if (sortBy === 'dueDate') {
-        return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
-      }
-
-      if (sortBy === 'amount') {
-        return b.totalAmount - a.totalAmount;
-      }
-
+    return [...base].sort((a, b) => {
+      if (sortBy === 'dueDate') return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+      if (sortBy === 'amount')  return b.totalAmount - a.totalAmount;
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
+  }, [createdPayments, activeRole, currentUserId, can, searchQuery, selectedStatuses, selectedMethods, sortBy]);
 
-    return base;
-  }, [
-    activeRole,
-    currentUserId,
-    can,
-    searchQuery,
-    selectedStatuses,
-    selectedMethods,
-    sortBy,
-  ]);
+  // ── Aggregate totals ──────────────────────────────────────────────────────
+  const totalAmount   = filteredPayments.reduce((s, p) => s + p.totalAmount, 0);
+  const paidAmount    = filteredPayments.reduce((s, p) => s + p.paidAmount, 0);
+  const pendingAmount = filteredPayments.reduce((s, p) => s + Math.max(0, p.totalAmount - p.paidAmount), 0);
+  const overdueCount  = filteredPayments.filter((p) => p.status === 'overdue').length;
 
-  const totalAmount = filteredPayments.reduce((sum, payment) => sum + payment.totalAmount, 0);
+  const toggleStatus = (v: PaymentStatus) =>
+    setSelectedStatuses((p) => p.includes(v) ? p.filter((x) => x !== v) : [...p, v]);
+  const toggleMethod = (v: PaymentMethod) =>
+    setSelectedMethods((p)  => p.includes(v) ? p.filter((x) => x !== v) : [...p, v]);
 
-  const paidAmount = filteredPayments.reduce(
-    (sum, payment) => sum + payment.paidAmount,
-    0,
-  );
-
-  const pendingAmount = filteredPayments.reduce(
-    (sum, payment) => sum + Math.max(0, payment.totalAmount - payment.paidAmount),
-    0,
-  );
+  const hasActiveFilters = selectedStatuses.length > 0 || selectedMethods.length > 0;
 
   return (
     <div className="flex flex-col gap-6">
+
+      {/* ── Header ──────────────────────────────────────────────────────── */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-foreground">Payments</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            {filteredPayments.length} payment{filteredPayments.length !== 1 ? 's' : ''} · Total:
-            ₹{(totalAmount / 100_000).toFixed(1)}L
+            {filteredPayments.length} record{filteredPayments.length !== 1 ? 's' : ''}
+            {' · '}Total: {fmt(totalAmount)}
+            {overdueCount > 0 && (
+              <span className="ml-2 font-semibold text-red-600 dark:text-red-400">
+                · {overdueCount} overdue
+              </span>
+            )}
           </p>
         </div>
 
         {can('payments.edit') && (
-          <button className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90">
+          <button
+            type="button"
+            onClick={() => setShowCreateModal(true)}
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+          >
             <Plus className="h-4 w-4" aria-hidden="true" />
             New Payment
           </button>
         )}
       </div>
 
+      {/* ── Summary cards ────────────────────────────────────────────────── */}
       <div className="grid grid-cols-3 gap-3 sm:gap-4">
         <div className="rounded-lg border border-border bg-card p-3 sm:p-4">
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Total
           </p>
-          <p className="mt-1 text-xl font-bold text-foreground sm:text-2xl">
-            ₹{(totalAmount / 100_000).toFixed(1)}L
-          </p>
+          <p className="mt-1 text-xl font-bold text-foreground sm:text-2xl">{fmt(totalAmount)}</p>
         </div>
-
-        <div className="rounded-lg border border-border bg-card p-3 sm:p-4">
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-800 dark:bg-emerald-950/30 sm:p-4">
           <p className="text-xs font-medium uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
-            Paid
+            Collected
           </p>
           <p className="mt-1 text-xl font-bold text-emerald-700 dark:text-emerald-300 sm:text-2xl">
-            ₹{(paidAmount / 100_000).toFixed(1)}L
+            {fmt(paidAmount)}
           </p>
         </div>
-
-        <div className="rounded-lg border border-border bg-card p-3 sm:p-4">
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/30 sm:p-4">
           <p className="text-xs font-medium uppercase tracking-wide text-amber-600 dark:text-amber-400">
             Pending
           </p>
           <p className="mt-1 text-xl font-bold text-amber-700 dark:text-amber-300 sm:text-2xl">
-            ₹{(pendingAmount / 100_000).toFixed(1)}L
+            {fmt(pendingAmount)}
           </p>
         </div>
       </div>
 
+      {/* Collection progress bar */}
+      {totalAmount > 0 && (
+        <div className="rounded-xl border border-border bg-card p-3 sm:p-4">
+          <div className="mb-1.5 flex items-center justify-between">
+            <p className="text-xs font-medium text-muted-foreground">Overall Collection Progress</p>
+            <p className="text-xs font-semibold text-foreground">
+              {Math.round((paidAmount / totalAmount) * 100)}%
+            </p>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full bg-emerald-500 transition-all duration-500"
+              style={{ width: `${(paidAmount / totalAmount) * 100}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* ── Search + Filters ─────────────────────────────────────────────── */}
       <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 sm:p-5">
+
         <div className="relative">
           <Search
-            className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
             aria-hidden="true"
           />
           <input
-            type="text"
-            placeholder="Search by student name, email, mobile, program, or invoice..."
+            type="search"
+            placeholder="Search by student, program, invoice…"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-3 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          <div className="group relative">
-            <button className="flex items-center gap-1 rounded-full border border-border bg-muted px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted/80">
-              Status {selectedStatuses.length > 0 && `(${selectedStatuses.length})`}
-              <ChevronDown className="h-3 w-3" aria-hidden="true" />
-            </button>
+        {/* Filters — click-based, mobile-friendly */}
+        <div className="flex flex-wrap items-center gap-2">
 
-            <div className="absolute left-0 top-full z-10 mt-1 hidden max-h-72 min-w-48 overflow-y-auto rounded-lg border border-border bg-popover p-2 shadow-lg group-hover:block">
-              {STATUS_OPTIONS.map((opt) => (
-                <label
-                  key={opt.value}
-                  className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedStatuses.includes(opt.value)}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedStatuses([...selectedStatuses, opt.value]);
-                      } else {
-                        setSelectedStatuses(
-                          selectedStatuses.filter((status) => status !== opt.value),
-                        );
-                      }
-                    }}
-                    className="h-4 w-4 rounded cursor-pointer"
-                  />
-                  {opt.label}
-                </label>
-              ))}
-            </div>
-          </div>
+          <FilterDropdown label="Status" count={selectedStatuses.length}>
+            {STATUS_OPTIONS.map((opt) => (
+              <FilterOption
+                key={opt.value}
+                label={opt.label}
+                checked={selectedStatuses.includes(opt.value)}
+                onChange={() => toggleStatus(opt.value)}
+              />
+            ))}
+          </FilterDropdown>
 
-          <div className="group relative">
-            <button className="flex items-center gap-1 rounded-full border border-border bg-muted px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted/80">
-              Method {selectedMethods.length > 0 && `(${selectedMethods.length})`}
-              <ChevronDown className="h-3 w-3" aria-hidden="true" />
-            </button>
+          <FilterDropdown label="Method" count={selectedMethods.length}>
+            {METHOD_OPTIONS.map((opt) => (
+              <FilterOption
+                key={opt.value}
+                label={opt.label}
+                checked={selectedMethods.includes(opt.value)}
+                onChange={() => toggleMethod(opt.value)}
+              />
+            ))}
+          </FilterDropdown>
 
-            <div className="absolute left-0 top-full z-10 mt-1 hidden max-h-72 min-w-48 overflow-y-auto rounded-lg border border-border bg-popover p-2 shadow-lg group-hover:block">
-              {METHOD_OPTIONS.map((opt) => (
-                <label
-                  key={opt.value}
-                  className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedMethods.includes(opt.value)}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedMethods([...selectedMethods, opt.value]);
-                      } else {
-                        setSelectedMethods(
-                          selectedMethods.filter((method) => method !== opt.value),
-                        );
-                      }
-                    }}
-                    className="h-4 w-4 rounded cursor-pointer"
-                  />
-                  {opt.label}
-                </label>
-              ))}
-            </div>
-          </div>
-
-          <div className="group relative ml-auto">
-            <button className="flex items-center gap-1 rounded-full border border-border bg-muted px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted/80">
-              Sort:{' '}
-              {sortBy === 'dueDate'
-                ? 'Due Date'
-                : sortBy === 'amount'
-                ? 'Amount'
-                : 'Created'}
-              <ChevronDown className="h-3 w-3" aria-hidden="true" />
-            </button>
-
-            <div className="absolute right-0 top-full z-10 mt-1 hidden min-w-40 rounded-lg border border-border bg-popover p-1 shadow-lg group-hover:block">
-              {[
-                { value: 'dueDate' as const, label: 'Due Date' },
-                { value: 'amount' as const, label: 'Amount (High to Low)' },
-                { value: 'created' as const, label: 'Recently Created' },
-              ].map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setSortBy(opt.value)}
-                  className={`block w-full rounded px-3 py-1.5 text-left text-sm transition-colors ${
-                    sortBy === opt.value
-                      ? 'bg-primary/10 font-medium text-primary'
-                      : 'text-foreground hover:bg-muted'
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
+          <SortDropdown
+            value={sortBy}
+            options={SORT_OPTIONS}
+            onChange={setSortBy}
+            className="ml-auto"
+          />
         </div>
+
+        {/* Active filter chips */}
+        {hasActiveFilters && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">Active:</span>
+            {selectedStatuses.map((s) => (
+              <button key={s} type="button" onClick={() => toggleStatus(s)}
+                className="flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20">
+                {s.replace(/_/g, ' ')} ×
+              </button>
+            ))}
+            {selectedMethods.map((m) => (
+              <button key={m} type="button" onClick={() => toggleMethod(m)}
+                className="flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20">
+                {m.replace(/_/g, ' ')} ×
+              </button>
+            ))}
+            <button type="button"
+              onClick={() => { setSelectedStatuses([]); setSelectedMethods([]); }}
+              className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground">
+              Clear all
+            </button>
+          </div>
+        )}
       </div>
 
+      {/* ── Payments table ───────────────────────────────────────────────── */}
       <div className="overflow-hidden rounded-xl border border-border">
         {filteredPayments.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 bg-card py-16 text-center">
             <p className="text-base font-medium text-foreground">No payments found</p>
             <p className="text-sm text-muted-foreground">
-              Try adjusting your filters or search query
+              {can('payments.edit')
+                ? 'Create a payment record with the button above.'
+                : 'Try adjusting your filters.'}
             </p>
           </div>
         ) : (
@@ -296,7 +296,6 @@ export function PaymentsView() {
                   </th>
                 </tr>
               </thead>
-
               <tbody className="divide-y divide-border">
                 {filteredPayments.map((payment) => (
                   <PaymentTableRow
@@ -311,6 +310,7 @@ export function PaymentsView() {
         )}
       </div>
 
+      {/* ── Drawers / Modals ─────────────────────────────────────────────── */}
       {selectedPayment && (
         <PaymentDrawer
           payment={selectedPayment}
@@ -318,6 +318,15 @@ export function PaymentsView() {
           onUpdate={(updated) => setSelectedPayment(updated)}
         />
       )}
+
+      <CreatePaymentModal
+        open={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onCreated={(payment) => {
+          setCreatedPayments((prev) => [payment, ...prev]);
+          setShowCreateModal(false);
+        }}
+      />
     </div>
   );
 }
