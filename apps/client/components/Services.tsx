@@ -37,9 +37,10 @@ const servicesData = [
         link: "/products/veil",
       },
       {
-        name: "IAM Service",
-        description: "Users and Permission managment with activity-log",
+        name: "CRM for EdTech",
+        description: "",
         icon: Database,
+        link: "/products/crm",
       },
       {
         name: "School Management",

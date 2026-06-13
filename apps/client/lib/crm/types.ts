@@ -48,14 +48,16 @@ export interface Lead {
   source: LeadSource;
   status: LeadStatus;
   priority: LeadPriority;
-  assignedTo: string;           // user id
-  assignedToName: string;       // denormalized — avoids joins in list views
-  nextFollowUp: string | null;  // ISO date string
+  assignedTo: string;             // user id of the sales/support person handling it
+  assignedToName: string;         // denormalized — avoids joins in list views
+  generatedBy?: string;           // user id of the marketing person who sourced this lead
+  generatedByName?: string;       // denormalized display name of the generator
+  nextFollowUp: string | null;    // ISO date string
   lostReason?: string;
   notes?: string;
   tags?: string[];
-  createdAt: string;            // ISO date string
-  updatedAt: string;            // ISO date string
+  createdAt: string;              // ISO date string
+  updatedAt: string;              // ISO date string
 }
 
 // ─── Lead Activity (timeline on lead detail drawer) ──────────────────────────
@@ -79,7 +81,7 @@ export interface LeadActivity {
   description?: string;
   performedBy: string;
   performedByName: string;
-  timestamp: string;            // ISO date string
+  timestamp: string;              // ISO date string
   metadata?: Record<string, unknown>;
 }
 
@@ -105,16 +107,16 @@ export type TaskType =
 export interface Task {
   id: string;
   leadId: string;
-  leadName: string;             // denormalized for list display
+  leadName: string;               // denormalized for list display
   title: string;
   description?: string;
   type: TaskType;
   status: TaskStatus;
   priority: TaskPriority;
-  assignedTo: string;           // user id
+  assignedTo: string;             // user id
   assignedToName: string;
-  dueDate: string;              // ISO date string
-  completedAt?: string;         // ISO date string
+  dueDate: string;                // ISO date string
+  completedAt?: string;           // ISO date string
   createdAt: string;
   updatedAt: string;
 }
@@ -131,7 +133,7 @@ export interface TeamMember {
   role: Role;
   status: UserStatus;
   department?: string;
-  avatar?: string;              // initials fallback when undefined
+  avatar?: string;                // initials fallback when undefined
   joinedAt: string;
   lastActiveAt: string;
 }
@@ -163,10 +165,10 @@ export interface Payment {
   paidAmount: number;
   dueAmount: number;
   status: PaymentStatus;
-  dueDate: string;              // ISO date string
+  dueDate: string;                // ISO date string
   lastPaymentDate?: string;
   invoiceNumber: string;
-  assignedTo: string;           // user id of the counselor
+  assignedTo: string;             // user id of the counselor
   assignedToName: string;
   notes?: string;
   createdAt: string;
@@ -179,7 +181,7 @@ export interface PaymentTransaction {
   amount: number;
   method: PaymentMethod;
   reference: string;
-  date: string;                 // ISO date string
+  date: string;                   // ISO date string
   note?: string;
 }
 
@@ -213,13 +215,13 @@ export interface ImportRow {
 export interface ImportJob {
   id: string;
   fileName: string;
-  fileSize: number;             // bytes
+  fileSize: number;               // bytes
   totalRows: number;
   validRows: number;
   invalidRows: number;
   duplicateRows: number;
   status: ImportStatus;
-  uploadedBy: string;           // user id
+  uploadedBy: string;             // user id
   uploadedByName: string;
   approvedBy?: string;
   approvedByName?: string;
@@ -239,18 +241,18 @@ export interface LeaderboardEntry {
   avatar?: string;
   enrollments: number;
   target: number;
-  targetAchieved: number;       // percentage 0–100
+  targetAchieved: number;         // percentage 0–100
   revenue: number;
   calls: number;
   meetings: number;
-  delta: number;                // positive = rank improved vs last period
+  delta: number;                  // positive = rank improved vs last period
   period: LeaderboardPeriod;
 }
 
 // ─── Analytics ───────────────────────────────────────────────────────────────
 
 export interface AnalyticsTrendPoint {
-  label: string;                // e.g. "Week 1", "Jan"
+  label: string;                  // e.g. "Week 1", "Jan"
   leads: number;
   enrolled: number;
   lost: number;
@@ -262,7 +264,7 @@ export interface AnalyticsSummary {
   newLeads: number;
   converted: number;
   lost: number;
-  conversionRate: number;       // percentage
+  conversionRate: number;         // percentage
   avgResponseTimeHours: number;
   revenueCollected: number;
   revenuePending: number;
@@ -359,14 +361,17 @@ export interface AuditLog {
 export type MetricFormat = 'number' | 'currency' | 'percentage' | 'duration';
 export type MetricTrend = 'up' | 'down' | 'neutral';
 
+/** Period selector used in team-lead and other dashboards */
+export type DashboardPeriod = 'today' | 'week' | 'month' | 'quarter' | 'year';
+
 export interface DashboardMetric {
   id: string;
   label: string;
   value: number;
-  change: number;               // percentage change vs previous period
+  change: number;                 // percentage change vs previous period
   trend: MetricTrend;
   format: MetricFormat;
-  allowedRoles: Role[];         // which roles see this metric
+  allowedRoles: Role[];           // which roles see this metric
 }
 
 // ─── Navigation ──────────────────────────────────────────────────────────────
@@ -375,7 +380,7 @@ export interface NavItem {
   id: string;
   label: string;
   href: string;
-  iconName: string;             // Lucide icon name string
+  iconName: string;               // Lucide icon name string
   badge?: number;
   allowedRoles: Role[];
 }

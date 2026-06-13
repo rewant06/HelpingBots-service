@@ -83,11 +83,11 @@ export function Navbar() {
               className="relative overflow-hidden bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 shadow-[0_0_15px_rgba(139,92,246,0.3)] hover:shadow-[0_0_25px_rgba(139,92,246,0.5)] transition-all group"
             >
               <Link
-                href="/crm"
+                href="/demo"
                 className="flex items-center gap-2 font-bold"
               >
                 <Zap className="w-4 h-4 fill-primary animate-pulse" />
-                <span>Demo</span>
+                <span>Try Demo</span>
                 {/* Live Indicator Dot */}
                 <span className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-red-500 animate-ping" />
               </Link>
