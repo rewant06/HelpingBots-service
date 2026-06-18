@@ -87,7 +87,7 @@ export function Navbar() {
                 className="flex items-center gap-2 font-bold"
               >
                 <Zap className="w-4 h-4 fill-primary animate-pulse" />
-                <span>Try Demo</span>
+                <span>Demo</span>
                 {/* Live Indicator Dot */}
                 <span className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-red-500 animate-ping" />
               </Link>

@@ -7,6 +7,7 @@ import { LEADS, TEAM_MEMBERS } from '@/lib/crm/data';
 import type { Lead, LeadPriority, LeadSource, LeadStatus } from '@/lib/crm/types';
 import { LeadDrawer }      from './LeadDrawer';
 import { LeadTableRow }    from './LeadTableRow';
+import { LeadCard }        from './LeadCard';
 import { CreateLeadModal } from './CreateLeadModal';
 import {
   FilterDropdown,
@@ -60,24 +61,17 @@ const SALES_MEMBERS = TEAM_MEMBERS.filter((m) =>
 export function LeadsView() {
   const { activeRole, currentUserId, can } = useCRMRole();
 
-  // ── Locally created leads ─────────────────────────────────────────────────
-  const [createdLeads, setCreatedLeads] = useState<Lead[]>([]);
-
-  // ── Filter / sort state ───────────────────────────────────────────────────
-  const [searchQuery,        setSearchQuery]        = useState('');
+  const [createdLeads,       setCreatedLeads]       = useState<Lead[]>([]);
+  const [searchQuery,        setSearchQuery]         = useState('');
   const [selectedStatuses,   setSelectedStatuses]   = useState<LeadStatus[]>([]);
   const [selectedPriorities, setSelectedPriorities] = useState<LeadPriority[]>([]);
   const [selectedSources,    setSelectedSources]    = useState<LeadSource[]>([]);
   const [selectedAssignee,   setSelectedAssignee]   = useState<string | null>(null);
   const [sortBy,             setSortBy]             = useState<'updated' | 'created' | 'name'>('updated');
-
-  // ── Selection + bulk assign state ────────────────────────────────────────
-  const [selectedIds,    setSelectedIds]    = useState<Set<string>>(new Set());
-  const [showBulkMenu,   setShowBulkMenu]   = useState(false);
-
-  // ── Drawer / modal state ──────────────────────────────────────────────────
-  const [selectedLead,    setSelectedLead]    = useState<Lead | null>(null);
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [selectedIds,        setSelectedIds]        = useState<Set<string>>(new Set());
+  const [showBulkMenu,       setShowBulkMenu]       = useState(false);
+  const [selectedLead,       setSelectedLead]       = useState<Lead | null>(null);
+  const [showCreateModal,    setShowCreateModal]     = useState(false);
 
   const canBulkAssign = can('leads.bulk_assign');
 
@@ -95,9 +89,9 @@ export function LeadsView() {
       const q = searchQuery.toLowerCase();
       base = base.filter(
         (l) =>
-          l.name.toLowerCase().includes(q) ||
-          l.email.toLowerCase().includes(q) ||
-          l.mobile.toLowerCase().includes(q) ||
+          l.name.toLowerCase().includes(q)    ||
+          l.email.toLowerCase().includes(q)   ||
+          l.mobile.toLowerCase().includes(q)  ||
           l.program.toLowerCase().includes(q),
       );
     }
@@ -112,7 +106,8 @@ export function LeadsView() {
       if (sortBy === 'created') return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
     });
-  }, [createdLeads, activeRole, currentUserId, can, searchQuery, selectedStatuses, selectedPriorities, selectedSources, selectedAssignee, sortBy]);
+  }, [createdLeads, activeRole, currentUserId, can, searchQuery,
+      selectedStatuses, selectedPriorities, selectedSources, selectedAssignee, sortBy]);
 
   const allFilteredIds = filteredLeads.map((l) => l.id);
   const allSelected    = allFilteredIds.length > 0 && allFilteredIds.every((id) => selectedIds.has(id));
@@ -134,17 +129,14 @@ export function LeadsView() {
     });
 
   const handleBulkAssign = (memberId: string) => {
-    // In a real app, this would call an API. For demo, clear selection.
-    void memberId;
+    void memberId; // demo — clear selection
     setSelectedIds(new Set());
     setShowBulkMenu(false);
   };
 
   const hasActiveFilters =
-    selectedStatuses.length > 0 ||
-    selectedPriorities.length > 0 ||
-    selectedSources.length > 0 ||
-    !!selectedAssignee;
+    selectedStatuses.length > 0 || selectedPriorities.length > 0 ||
+    selectedSources.length > 0  || !!selectedAssignee;
 
   return (
     <div className="flex flex-col gap-6">
@@ -170,9 +162,9 @@ export function LeadsView() {
         )}
       </div>
 
-      {/* ── Bulk assign bar ──────────────────────────────────────────────── */}
+      {/* ── Bulk-assign bar — sticky so it stays visible while scrolling ── */}
       {canBulkAssign && selectedIds.size > 0 && (
-        <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-4 py-2.5">
+        <div className="sticky top-0 z-20 flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-4 py-2.5 backdrop-blur-sm">
           <p className="text-sm font-medium text-primary">
             {selectedIds.size} lead{selectedIds.size !== 1 ? 's' : ''} selected
           </p>
@@ -222,7 +214,6 @@ export function LeadsView() {
 
       {/* ── Search + Filters ─────────────────────────────────────────────── */}
       <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 sm:p-5">
-
         <div className="relative">
           <Search
             className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
@@ -237,66 +228,45 @@ export function LeadsView() {
           />
         </div>
 
-        {/* Filters — click-based, all touch-friendly */}
         <div className="flex flex-wrap items-center gap-2">
-
           <FilterDropdown label="Status" count={selectedStatuses.length}>
             {STATUS_OPTIONS.map((opt) => (
-              <FilterOption
-                key={opt.value}
-                label={opt.label}
+              <FilterOption key={opt.value} label={opt.label}
                 checked={selectedStatuses.includes(opt.value)}
-                onChange={() => toggleStatus(opt.value)}
-              />
+                onChange={() => toggleStatus(opt.value)} />
             ))}
           </FilterDropdown>
 
           <FilterDropdown label="Priority" count={selectedPriorities.length}>
             {PRIORITY_OPTIONS.map((opt) => (
-              <FilterOption
-                key={opt.value}
-                label={opt.label}
+              <FilterOption key={opt.value} label={opt.label}
                 checked={selectedPriorities.includes(opt.value)}
-                onChange={() => togglePriority(opt.value)}
-              />
+                onChange={() => togglePriority(opt.value)} />
             ))}
           </FilterDropdown>
 
           <FilterDropdown label="Source" count={selectedSources.length}>
             {SOURCE_OPTIONS.map((opt) => (
-              <FilterOption
-                key={opt.value}
-                label={opt.label}
+              <FilterOption key={opt.value} label={opt.label}
                 checked={selectedSources.includes(opt.value)}
-                onChange={() => toggleSource(opt.value)}
-              />
+                onChange={() => toggleSource(opt.value)} />
             ))}
           </FilterDropdown>
 
           {can('leads.view_all') && (
             <FilterDropdown label="Assignee" count={selectedAssignee ? 1 : 0}>
-              <FilterOption
-                label="All"
-                checked={selectedAssignee === null}
-                onChange={() => setSelectedAssignee(null)}
-              />
+              <FilterOption label="All" checked={selectedAssignee === null}
+                onChange={() => setSelectedAssignee(null)} />
               {TEAM_MEMBERS.filter((m) => m.role !== 'student').map((m) => (
-                <FilterOption
-                  key={m.id}
-                  label={m.name}
+                <FilterOption key={m.id} label={m.name}
                   checked={selectedAssignee === m.id}
-                  onChange={() => toggleAssignee(m.id)}
-                />
+                  onChange={() => toggleAssignee(m.id)} />
               ))}
             </FilterDropdown>
           )}
 
-          <SortDropdown
-            value={sortBy}
-            options={SORT_OPTIONS}
-            onChange={setSortBy}
-            className="ml-auto"
-          />
+          <SortDropdown value={sortBy} options={SORT_OPTIONS}
+            onChange={setSortBy} className="ml-auto" />
         </div>
 
         {/* Active filter chips */}
@@ -336,10 +306,10 @@ export function LeadsView() {
         )}
       </div>
 
-      {/* ── Leads table ──────────────────────────────────────────────────── */}
-      <div className="overflow-hidden rounded-xl border border-border">
+      {/* ── Lead list ─────────────────────────────────────────────────────── */}
+      <div className="overflow-hidden rounded-xl border border-border bg-card">
         {filteredLeads.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-3 bg-card py-16 text-center">
+          <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
             <p className="text-base font-medium text-foreground">No leads found</p>
             <p className="text-sm text-muted-foreground">
               {can('leads.create')
@@ -348,46 +318,79 @@ export function LeadsView() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto bg-card">
-            <table className="w-full text-sm">
-              <thead className="border-b border-border bg-muted/50">
-                <tr>
-                  {canBulkAssign && (
-                    <th className="w-10 px-4 py-3 sm:px-5">
-                      <input
-                        type="checkbox"
-                        checked={allSelected}
-                        onChange={toggleAll}
-                        className="h-4 w-4 cursor-pointer rounded"
-                        aria-label="Select all leads"
-                      />
+          <>
+            {/* ── Mobile: card list (< md / 768px) ────────────────────────
+                Shows ALL fields — nothing hidden. LeadCard uses the same
+                props as LeadTableRow so this is a drop-in swap. */}
+            <div className="divide-y divide-border md:hidden">
+              {filteredLeads.map((lead) => (
+                <LeadCard
+                  key={lead.id}
+                  lead={lead}
+                  selected={selectedIds.has(lead.id)}
+                  showCheckbox={canBulkAssign}
+                  onSelect={() => toggleOne(lead.id)}
+                  onClick={() => setSelectedLead(lead)}
+                />
+              ))}
+            </div>
+
+            {/* ── Desktop: table (≥ md / 768px) ───────────────────────────
+                Column header breakpoints now match LeadTableRow:
+                  Program   → sm: (640px)
+                  Status    → always visible in table context
+                  Assigned  → lg: (1024px) */}
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full text-sm">
+                <thead className="border-b border-border bg-muted/50">
+                  <tr>
+                    {canBulkAssign && (
+                      <th className="w-10 px-4 py-3 sm:px-5">
+                        <input
+                          type="checkbox"
+                          checked={allSelected}
+                          onChange={toggleAll}
+                          className="h-4 w-4 cursor-pointer rounded"
+                          aria-label="Select all leads"
+                        />
+                      </th>
+                    )}
+                    <th className="px-4 py-3 text-left font-semibold text-foreground sm:px-5">
+                      Name
                     </th>
-                  )}
-                  <th className="px-4 py-3 text-left font-semibold text-foreground sm:px-5">Name</th>
-                  <th className="hidden px-4 py-3 text-left font-semibold text-foreground sm:table-cell sm:px-5">Program</th>
-                  <th className="hidden px-4 py-3 text-left font-semibold text-foreground lg:table-cell lg:px-5">Status</th>
-                  <th className="hidden px-4 py-3 text-left font-semibold text-foreground xl:table-cell xl:px-5">Assigned To</th>
-                  <th className="px-4 py-3 text-left font-semibold text-foreground sm:px-5">Contact</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {filteredLeads.map((lead) => (
-                  <LeadTableRow
-                    key={lead.id}
-                    lead={lead}
-                    selected={selectedIds.has(lead.id)}
-                    showCheckbox={canBulkAssign}
-                    onSelect={() => toggleOne(lead.id)}
-                    onClick={() => setSelectedLead(lead)}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    <th className="hidden px-4 py-3 text-left font-semibold text-foreground sm:table-cell sm:px-5">
+                      Program
+                    </th>
+                    <th className="px-4 py-3 text-left font-semibold text-foreground sm:px-5">
+                      Status
+                    </th>
+                    <th className="hidden px-4 py-3 text-left font-semibold text-foreground lg:table-cell lg:px-5">
+                      Assigned To
+                    </th>
+                    <th className="px-4 py-3 text-left font-semibold text-foreground sm:px-5">
+                      Contact
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {filteredLeads.map((lead) => (
+                    <LeadTableRow
+                      key={lead.id}
+                      lead={lead}
+                      selected={selectedIds.has(lead.id)}
+                      showCheckbox={canBulkAssign}
+                      onSelect={() => toggleOne(lead.id)}
+                      onClick={() => setSelectedLead(lead)}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
 
-      {/* ── Drawers / Modals ─────────────────────────────────────────────── */}
+      {/* ── Drawer / Modal ───────────────────────────────────────────────── */}
       {selectedLead && (
         <LeadDrawer
           lead={selectedLead}
