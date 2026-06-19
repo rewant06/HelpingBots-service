@@ -29,12 +29,16 @@ const STATUS_BADGE: Record<TaskStatus, string> = {
   pending:   'bg-blue-100    text-blue-700    dark:bg-blue-900/40    dark:text-blue-300',
   overdue:   'bg-red-100     text-red-700     dark:bg-red-900/40     dark:text-red-300',
   completed: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+  in_progress: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300',
+  cancelled: 'bg-gray-100  text-gray-700  dark:bg-gray-800     dark:text-gray-300',
 };
 
 const STATUS_LABEL: Record<TaskStatus, string> = {
   pending:   'Pending',
   overdue:   'Overdue',
   completed: 'Done',
+  in_progress: 'In Progress',
+  cancelled: 'Cancelled',
 };
 
 // CSS capitalize gives "Whatsapp" not "WhatsApp" — use lookup
