@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Search, Plus, UserCheck, ChevronDown, X } from 'lucide-react';
+import { Plus, Search, UserCheck, ChevronDown, X } from 'lucide-react';
 import { useCRMRole } from '@/lib/crm/role-context';
 import { LEADS, TEAM_MEMBERS } from '@/lib/crm/data';
 import type { Lead, LeadPriority, LeadSource, LeadStatus } from '@/lib/crm/types';
@@ -14,47 +14,68 @@ import {
   FilterOption,
   SortDropdown,
 } from '@/components/crm/shared/FilterDropdown';
+import { FilterSheet } from '@/components/crm/shared/FilterSheet';
 
-// ─── Filter option lists ──────────────────────────────────────────────────────
+// ─── Filter + sort option lists ───────────────────────────────────────────────
 
 const STATUS_OPTIONS: { value: LeadStatus; label: string }[] = [
-  { value: 'new',                    label: 'New' },
-  { value: 'contacted',              label: 'Contacted' },
-  { value: 'interested',             label: 'Interested' },
-  { value: 'follow_up',              label: 'Follow-up' },
-  { value: 'application_started',    label: 'Application Started' },
-  { value: 'application_submitted',  label: 'Application Submitted' },
-  { value: 'admission_confirmed',    label: 'Admission Confirmed' },
-  { value: 'enrolled',               label: 'Enrolled' },
-  { value: 'lost',                   label: 'Lost' },
-  { value: 'on_hold',                label: 'On Hold' },
+  { value: 'new',                    label: 'New'                  },
+  { value: 'contacted',              label: 'Contacted'            },
+  { value: 'interested',             label: 'Interested'           },
+  { value: 'follow_up',              label: 'Follow-up'            },
+  { value: 'application_started',    label: 'Application Started'  },
+  { value: 'application_submitted',  label: 'Application Submitted'},
+  { value: 'admission_confirmed',    label: 'Admission Confirmed'  },
+  { value: 'enrolled',               label: 'Enrolled'             },
+  { value: 'lost',                   label: 'Lost'                 },
+  { value: 'on_hold',                label: 'On Hold'              },
 ];
 
 const PRIORITY_OPTIONS: { value: LeadPriority; label: string }[] = [
-  { value: 'high',   label: 'High' },
+  { value: 'high',   label: 'High'   },
   { value: 'medium', label: 'Medium' },
-  { value: 'low',    label: 'Low' },
+  { value: 'low',    label: 'Low'    },
 ];
 
 const SOURCE_OPTIONS: { value: LeadSource; label: string }[] = [
-  { value: 'website',        label: 'Website' },
-  { value: 'google_ads',     label: 'Google Ads' },
-  { value: 'referral',       label: 'Referral' },
-  { value: 'whatsapp',       label: 'WhatsApp' },
-  { value: 'social_media',   label: 'Social Media' },
-  { value: 'walk_in',        label: 'Walk-in' },
-  { value: 'event',          label: 'Event' },
+  { value: 'website',        label: 'Website'       },
+  { value: 'google_ads',     label: 'Google Ads'    },
+  { value: 'referral',       label: 'Referral'      },
+  { value: 'whatsapp',       label: 'WhatsApp'      },
+  { value: 'social_media',   label: 'Social Media'  },
+  { value: 'walk_in',        label: 'Walk-in'       },
+  { value: 'event',          label: 'Event'         },
 ];
 
 const SORT_OPTIONS: { value: 'updated' | 'created' | 'name'; label: string }[] = [
   { value: 'updated', label: 'Recently Updated' },
   { value: 'created', label: 'Recently Created' },
-  { value: 'name',    label: 'Name (A–Z)' },
+  { value: 'name',    label: 'Name (A–Z)'       },
 ];
 
 const SALES_MEMBERS = TEAM_MEMBERS.filter((m) =>
   ['sales_executive', 'support_agent', 'team_lead'].includes(m.role),
 );
+
+// ─── Label lookups for active filter chips ────────────────────────────────────
+
+const STATUS_LABEL: Record<LeadStatus, string> = {
+  new: 'New', contacted: 'Contacted', interested: 'Interested',
+  follow_up: 'Follow-up', application_started: 'App Started',
+  application_submitted: 'Submitted', admission_confirmed: 'Confirmed',
+  enrolled: 'Enrolled', lost: 'Lost', on_hold: 'On Hold',
+};
+
+const PRIORITY_LABEL: Record<LeadPriority, string> = {
+  high: 'High', medium: 'Medium', low: 'Low',
+};
+
+const SOURCE_LABEL: Record<LeadSource, string> = {
+  website: 'Website', google_ads: 'Google Ads', referral: 'Referral',
+  whatsapp: 'WhatsApp', social_media: 'Social Media',
+  walk_in: 'Walk-in', event: 'Event', email_campaign: 'Email Campaign',
+  phone: 'Phone', other: 'Other',
+};
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -75,10 +96,17 @@ export function LeadsView() {
 
   const canBulkAssign = can('leads.bulk_assign');
 
+  const activeFilterCount =
+    selectedStatuses.length +
+    selectedPriorities.length +
+    selectedSources.length +
+    (selectedAssignee ? 1 : 0);
+
+  const hasActiveFilters = activeFilterCount > 0;
+
   // ── Filtered + sorted leads ───────────────────────────────────────────────
   const filteredLeads = useMemo(() => {
     const allLeads = [...createdLeads, ...LEADS];
-
     let base = can('leads.view_all')
       ? allLeads
       : activeRole === 'support_agent'
@@ -89,9 +117,9 @@ export function LeadsView() {
       const q = searchQuery.toLowerCase();
       base = base.filter(
         (l) =>
-          l.name.toLowerCase().includes(q)    ||
-          l.email.toLowerCase().includes(q)   ||
-          l.mobile.toLowerCase().includes(q)  ||
+          l.name.toLowerCase().includes(q)   ||
+          l.email.toLowerCase().includes(q)  ||
+          l.mobile.toLowerCase().includes(q) ||
           l.program.toLowerCase().includes(q),
       );
     }
@@ -116,6 +144,12 @@ export function LeadsView() {
   const togglePriority = (v: LeadPriority) => setSelectedPriorities((p) => p.includes(v) ? p.filter((x) => x !== v) : [...p, v]);
   const toggleSource   = (v: LeadSource)   => setSelectedSources((p)    => p.includes(v) ? p.filter((x) => x !== v) : [...p, v]);
   const toggleAssignee = (id: string)      => setSelectedAssignee((p)   => p === id ? null : id);
+  const clearAllFilters = () => {
+    setSelectedStatuses([]);
+    setSelectedPriorities([]);
+    setSelectedSources([]);
+    setSelectedAssignee(null);
+  };
 
   const toggleAll = () => {
     if (allSelected) { setSelectedIds(new Set()); return; }
@@ -129,14 +163,10 @@ export function LeadsView() {
     });
 
   const handleBulkAssign = (memberId: string) => {
-    void memberId; // demo — clear selection
+    void memberId;
     setSelectedIds(new Set());
     setShowBulkMenu(false);
   };
-
-  const hasActiveFilters =
-    selectedStatuses.length > 0 || selectedPriorities.length > 0 ||
-    selectedSources.length > 0  || !!selectedAssignee;
 
   return (
     <div className="flex flex-col gap-6">
@@ -149,7 +179,6 @@ export function LeadsView() {
             {filteredLeads.length} {filteredLeads.length === 1 ? 'lead' : 'leads'} found
           </p>
         </div>
-
         {can('leads.create') && (
           <button
             type="button"
@@ -162,13 +191,12 @@ export function LeadsView() {
         )}
       </div>
 
-      {/* ── Bulk-assign bar — sticky so it stays visible while scrolling ── */}
+      {/* ── Sticky bulk-assign bar ───────────────────────────────────────── */}
       {canBulkAssign && selectedIds.size > 0 && (
         <div className="sticky top-0 z-20 flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-4 py-2.5 backdrop-blur-sm">
           <p className="text-sm font-medium text-primary">
             {selectedIds.size} lead{selectedIds.size !== 1 ? 's' : ''} selected
           </p>
-
           <div className="flex items-center gap-2">
             <div className="relative">
               <button
@@ -184,12 +212,9 @@ export function LeadsView() {
                 <div className="absolute right-0 top-full z-20 mt-1 w-52 overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
                   <div className="p-1">
                     {SALES_MEMBERS.map((m) => (
-                      <button
-                        key={m.id}
-                        type="button"
+                      <button key={m.id} type="button"
                         onClick={() => handleBulkAssign(m.id)}
-                        className="flex w-full items-center gap-2 rounded px-3 py-2 text-sm text-foreground transition-colors hover:bg-muted"
-                      >
+                        className="flex w-full items-center gap-2 rounded px-3 py-2 text-sm text-foreground transition-colors hover:bg-muted">
                         <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
                           {m.name.split(' ').map((n) => n[0]).join('')}
                         </div>
@@ -200,12 +225,9 @@ export function LeadsView() {
                 </div>
               )}
             </div>
-            <button
-              type="button"
-              onClick={() => setSelectedIds(new Set())}
+            <button type="button" onClick={() => setSelectedIds(new Set())}
               className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted"
-              aria-label="Clear selection"
-            >
+              aria-label="Clear selection">
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
@@ -214,11 +236,10 @@ export function LeadsView() {
 
       {/* ── Search + Filters ─────────────────────────────────────────────── */}
       <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 sm:p-5">
+
+        {/* Search — always visible */}
         <div className="relative">
-          <Search
-            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-            aria-hidden="true"
-          />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
           <input
             type="search"
             placeholder="Search by name, email, mobile, program…"
@@ -228,7 +249,52 @@ export function LeadsView() {
           />
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        {/* ── Mobile: FilterSheet button + sort ─────────────────────────── */}
+        <div className="flex items-center gap-2 md:hidden">
+          <FilterSheet activeCount={activeFilterCount} onClear={clearAllFilters}>
+
+            <FilterSheet.Section title="Status">
+              {STATUS_OPTIONS.map((opt) => (
+                <FilterSheet.Option key={opt.value} label={opt.label}
+                  checked={selectedStatuses.includes(opt.value)}
+                  onChange={() => toggleStatus(opt.value)} />
+              ))}
+            </FilterSheet.Section>
+
+            <FilterSheet.Section title="Priority">
+              {PRIORITY_OPTIONS.map((opt) => (
+                <FilterSheet.Option key={opt.value} label={opt.label}
+                  checked={selectedPriorities.includes(opt.value)}
+                  onChange={() => togglePriority(opt.value)} />
+              ))}
+            </FilterSheet.Section>
+
+            <FilterSheet.Section title="Source">
+              {SOURCE_OPTIONS.map((opt) => (
+                <FilterSheet.Option key={opt.value} label={opt.label}
+                  checked={selectedSources.includes(opt.value)}
+                  onChange={() => toggleSource(opt.value)} />
+              ))}
+            </FilterSheet.Section>
+
+            {can('leads.view_all') && (
+              <FilterSheet.Section title="Assignee">
+                {TEAM_MEMBERS.filter((m) => m.role !== 'student').map((m) => (
+                  <FilterSheet.Option key={m.id} label={m.name}
+                    checked={selectedAssignee === m.id}
+                    onChange={() => toggleAssignee(m.id)} />
+                ))}
+              </FilterSheet.Section>
+            )}
+
+          </FilterSheet>
+
+          <SortDropdown value={sortBy} options={SORT_OPTIONS}
+            onChange={setSortBy} className="ml-auto" />
+        </div>
+
+        {/* ── Desktop: inline filter row (unchanged) ────────────────────── */}
+        <div className="hidden flex-wrap items-center gap-2 md:flex">
           <FilterDropdown label="Status" count={selectedStatuses.length}>
             {STATUS_OPTIONS.map((opt) => (
               <FilterOption key={opt.value} label={opt.label}
@@ -269,26 +335,26 @@ export function LeadsView() {
             onChange={setSortBy} className="ml-auto" />
         </div>
 
-        {/* Active filter chips */}
+        {/* Active filter chips — proper labels */}
         {hasActiveFilters && (
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs text-muted-foreground">Active:</span>
             {selectedStatuses.map((s) => (
               <button key={s} type="button" onClick={() => toggleStatus(s)}
                 className="flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20">
-                {s.replace(/_/g, ' ')} ×
+                {STATUS_LABEL[s]} ×
               </button>
             ))}
             {selectedPriorities.map((p) => (
               <button key={p} type="button" onClick={() => togglePriority(p)}
                 className="flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20">
-                {p} ×
+                {PRIORITY_LABEL[p]} ×
               </button>
             ))}
             {selectedSources.map((s) => (
               <button key={s} type="button" onClick={() => toggleSource(s)}
                 className="flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20">
-                {s.replace(/_/g, ' ')} ×
+                {SOURCE_LABEL[s] ?? s} ×
               </button>
             ))}
             {selectedAssignee && (
@@ -297,8 +363,7 @@ export function LeadsView() {
                 {TEAM_MEMBERS.find((m) => m.id === selectedAssignee)?.name} ×
               </button>
             )}
-            <button type="button"
-              onClick={() => { setSelectedStatuses([]); setSelectedPriorities([]); setSelectedSources([]); setSelectedAssignee(null); }}
+            <button type="button" onClick={clearAllFilters}
               className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground">
               Clear all
             </button>
@@ -319,69 +384,43 @@ export function LeadsView() {
           </div>
         ) : (
           <>
-            {/* ── Mobile: card list (< md / 768px) ────────────────────────
-                Shows ALL fields — nothing hidden. LeadCard uses the same
-                props as LeadTableRow so this is a drop-in swap. */}
+            {/* Mobile: card list (< md) */}
             <div className="divide-y divide-border md:hidden">
               {filteredLeads.map((lead) => (
-                <LeadCard
-                  key={lead.id}
-                  lead={lead}
+                <LeadCard key={lead.id} lead={lead}
                   selected={selectedIds.has(lead.id)}
                   showCheckbox={canBulkAssign}
                   onSelect={() => toggleOne(lead.id)}
-                  onClick={() => setSelectedLead(lead)}
-                />
+                  onClick={() => setSelectedLead(lead)} />
               ))}
             </div>
 
-            {/* ── Desktop: table (≥ md / 768px) ───────────────────────────
-                Column header breakpoints now match LeadTableRow:
-                  Program   → sm: (640px)
-                  Status    → always visible in table context
-                  Assigned  → lg: (1024px) */}
+            {/* Desktop: table (≥ md) */}
             <div className="hidden overflow-x-auto md:block">
               <table className="w-full text-sm">
                 <thead className="border-b border-border bg-muted/50">
                   <tr>
                     {canBulkAssign && (
                       <th className="w-10 px-4 py-3 sm:px-5">
-                        <input
-                          type="checkbox"
-                          checked={allSelected}
-                          onChange={toggleAll}
+                        <input type="checkbox" checked={allSelected} onChange={toggleAll}
                           className="h-4 w-4 cursor-pointer rounded"
-                          aria-label="Select all leads"
-                        />
+                          aria-label="Select all leads" />
                       </th>
                     )}
-                    <th className="px-4 py-3 text-left font-semibold text-foreground sm:px-5">
-                      Name
-                    </th>
-                    <th className="hidden px-4 py-3 text-left font-semibold text-foreground sm:table-cell sm:px-5">
-                      Program
-                    </th>
-                    <th className="px-4 py-3 text-left font-semibold text-foreground sm:px-5">
-                      Status
-                    </th>
-                    <th className="hidden px-4 py-3 text-left font-semibold text-foreground lg:table-cell lg:px-5">
-                      Assigned To
-                    </th>
-                    <th className="px-4 py-3 text-left font-semibold text-foreground sm:px-5">
-                      Contact
-                    </th>
+                    <th className="px-4 py-3 text-left font-semibold text-foreground sm:px-5">Name</th>
+                    <th className="hidden px-4 py-3 text-left font-semibold text-foreground sm:table-cell sm:px-5">Program</th>
+                    <th className="px-4 py-3 text-left font-semibold text-foreground sm:px-5">Status</th>
+                    <th className="hidden px-4 py-3 text-left font-semibold text-foreground lg:table-cell lg:px-5">Assigned To</th>
+                    <th className="px-4 py-3 text-left font-semibold text-foreground sm:px-5">Contact</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
                   {filteredLeads.map((lead) => (
-                    <LeadTableRow
-                      key={lead.id}
-                      lead={lead}
+                    <LeadTableRow key={lead.id} lead={lead}
                       selected={selectedIds.has(lead.id)}
                       showCheckbox={canBulkAssign}
                       onSelect={() => toggleOne(lead.id)}
-                      onClick={() => setSelectedLead(lead)}
-                    />
+                      onClick={() => setSelectedLead(lead)} />
                   ))}
                 </tbody>
               </table>
@@ -392,21 +431,12 @@ export function LeadsView() {
 
       {/* ── Drawer / Modal ───────────────────────────────────────────────── */}
       {selectedLead && (
-        <LeadDrawer
-          lead={selectedLead}
-          onClose={() => setSelectedLead(null)}
-          onUpdate={(updated) => setSelectedLead(updated)}
-        />
+        <LeadDrawer lead={selectedLead} onClose={() => setSelectedLead(null)}
+          onUpdate={(updated) => setSelectedLead(updated)} />
       )}
-
-      <CreateLeadModal
-        open={showCreateModal}
+      <CreateLeadModal open={showCreateModal}
         onClose={() => setShowCreateModal(false)}
-        onCreated={(lead) => {
-          setCreatedLeads((prev) => [lead, ...prev]);
-          setShowCreateModal(false);
-        }}
-      />
+        onCreated={(lead) => { setCreatedLeads((prev) => [lead, ...prev]); setShowCreateModal(false); }} />
     </div>
   );
 }

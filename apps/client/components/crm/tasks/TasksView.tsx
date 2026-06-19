@@ -1,51 +1,66 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Plus, Search, AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Plus } from 'lucide-react';
 import { useCRMRole } from '@/lib/crm/role-context';
 import { TASKS, TEAM_MEMBERS } from '@/lib/crm/data';
 import type { Task, TaskPriority, TaskStatus, TaskType } from '@/lib/crm/types';
 import { TaskDrawer }      from './TaskDrawer';
 import { TaskTableRow }    from './TaskTableRow';
+import { TaskCard }        from './TaskCard';
 import { CreateTaskModal } from './CreateTaskModal';
 import {
   FilterDropdown,
   FilterOption,
   SortDropdown,
 } from '@/components/crm/shared/FilterDropdown';
+import { FilterSheet } from '@/components/crm/shared/FilterSheet';
 
-// ─── Filter option lists ──────────────────────────────────────────────────────
+// ─── Filter + sort option lists ───────────────────────────────────────────────
 
-const STATUS_OPTIONS:   { value: TaskStatus;   label: string }[] = [
-  { value: 'pending',   label: 'Pending' },
-  { value: 'overdue',   label: 'Overdue' },
+const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
+  { value: 'pending',   label: 'Pending'   },
+  { value: 'overdue',   label: 'Overdue'   },
   { value: 'completed', label: 'Completed' },
 ];
 
 const PRIORITY_OPTIONS: { value: TaskPriority; label: string }[] = [
   { value: 'urgent', label: 'Urgent' },
-  { value: 'high',   label: 'High' },
+  { value: 'high',   label: 'High'   },
   { value: 'medium', label: 'Medium' },
-  { value: 'low',    label: 'Low' },
+  { value: 'low',    label: 'Low'    },
 ];
 
 const TYPE_OPTIONS: { value: TaskType; label: string }[] = [
-  { value: 'call',     label: 'Call' },
-  { value: 'email',    label: 'Email' },
+  { value: 'call',     label: 'Call'     },
+  { value: 'email',    label: 'Email'    },
   { value: 'whatsapp', label: 'WhatsApp' },
-  { value: 'meeting',  label: 'Meeting' },
+  { value: 'meeting',  label: 'Meeting'  },
   { value: 'document', label: 'Document' },
-  { value: 'other',    label: 'Other' },
+  { value: 'other',    label: 'Other'    },
 ];
 
 const SORT_OPTIONS: { value: 'due' | 'priority' | 'created'; label: string }[] = [
-  { value: 'due',      label: 'Due Date' },
-  { value: 'priority', label: 'Priority' },
-  { value: 'created',  label: 'Recently Created' },
+  { value: 'due',      label: 'Due Date'         },
+  { value: 'priority', label: 'Priority'          },
+  { value: 'created',  label: 'Recently Created'  },
 ];
 
 const PRIORITY_ORDER: Record<TaskPriority, number> = {
   urgent: 0, high: 1, medium: 2, low: 3,
+};
+
+// ─── Label lookups for active chips ───────────────────────────────────────────
+
+const STATUS_LABEL: Record<TaskStatus, string> = {
+  pending: 'Pending', overdue: 'Overdue', completed: 'Completed',
+};
+const PRIORITY_LABEL: Record<TaskPriority, string> = {
+  urgent: 'Urgent', high: 'High', medium: 'Medium', low: 'Low',
+};
+const TYPE_LABEL: Record<TaskType, string> = {
+  call: 'Call', email: 'Email', whatsapp: 'WhatsApp',
+  meeting: 'Meeting', document: 'Document', other: 'Other',
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -53,24 +68,27 @@ const PRIORITY_ORDER: Record<TaskPriority, number> = {
 export function TasksView() {
   const { currentUserId, can } = useCRMRole();
 
-  // ── Locally created tasks (new tasks added this session) ──────────────────
-  const [createdTasks, setCreatedTasks] = useState<Task[]>([]);
-
-  // ── Filter / sort state ───────────────────────────────────────────────────
-  const [searchQuery,        setSearchQuery]        = useState('');
+  const [createdTasks,       setCreatedTasks]       = useState<Task[]>([]);
+  const [searchQuery,        setSearchQuery]         = useState('');
   const [selectedStatuses,   setSelectedStatuses]   = useState<TaskStatus[]>([]);
   const [selectedPriorities, setSelectedPriorities] = useState<TaskPriority[]>([]);
   const [selectedTypes,      setSelectedTypes]      = useState<TaskType[]>([]);
   const [selectedAssignee,   setSelectedAssignee]   = useState<string | null>(null);
   const [sortBy,             setSortBy]             = useState<'due' | 'priority' | 'created'>('due');
+  const [selectedTask,       setSelectedTask]       = useState<Task | null>(null);
+  const [showCreateModal,    setShowCreateModal]     = useState(false);
 
-  // ── Drawer / modal state ──────────────────────────────────────────────────
-  const [selectedTask,    setSelectedTask]    = useState<Task | null>(null);
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  // ── Derived counts ────────────────────────────────────────────────────────
+  const activeFilterCount =
+    selectedStatuses.length +
+    selectedPriorities.length +
+    selectedTypes.length +
+    (selectedAssignee ? 1 : 0);
+
+  const hasActiveFilters = activeFilterCount > 0;
 
   // ── Filtered + sorted tasks ───────────────────────────────────────────────
   const filteredTasks = useMemo(() => {
-    // Merge locally created tasks (shown at the top) with static data
     const allTasks = [...createdTasks, ...TASKS];
     let base = can('tasks.view_all')
       ? allTasks
@@ -80,9 +98,9 @@ export function TasksView() {
       const q = searchQuery.toLowerCase();
       base = base.filter(
         (t) =>
-          t.title.toLowerCase().includes(q) ||
+          t.title.toLowerCase().includes(q)            ||
           (t.description ?? '').toLowerCase().includes(q) ||
-          t.leadName.toLowerCase().includes(q) ||
+          t.leadName.toLowerCase().includes(q)         ||
           t.assignedToName.toLowerCase().includes(q),
       );
     }
@@ -97,7 +115,8 @@ export function TasksView() {
       if (sortBy === 'priority') return PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
-  }, [createdTasks, can, currentUserId, searchQuery, selectedStatuses, selectedPriorities, selectedTypes, selectedAssignee, sortBy]);
+  }, [createdTasks, can, currentUserId, searchQuery,
+      selectedStatuses, selectedPriorities, selectedTypes, selectedAssignee, sortBy]);
 
   const overdueCount   = filteredTasks.filter((t) => t.status === 'overdue').length;
   const completedCount = filteredTasks.filter((t) => t.status === 'completed').length;
@@ -106,12 +125,15 @@ export function TasksView() {
   const togglePriority = (v: TaskPriority) => setSelectedPriorities((p) => p.includes(v) ? p.filter((x) => x !== v) : [...p, v]);
   const toggleType     = (v: TaskType)     => setSelectedTypes((p)      => p.includes(v) ? p.filter((x) => x !== v) : [...p, v]);
   const toggleAssignee = (id: string)      => setSelectedAssignee((p)   => p === id ? null : id);
+  const clearAllFilters = () => {
+    setSelectedStatuses([]);
+    setSelectedPriorities([]);
+    setSelectedTypes([]);
+    setSelectedAssignee(null);
+  };
 
   const handleTaskUpdate = (updated: Task) => {
-    // Update local created tasks if applicable
-    setCreatedTasks((prev) =>
-      prev.map((t) => (t.id === updated.id ? updated : t)),
-    );
+    setCreatedTasks((prev) => prev.map((t) => t.id === updated.id ? updated : t));
     setSelectedTask(updated);
   };
 
@@ -152,12 +174,9 @@ export function TasksView() {
       {/* ── Search + Filters ─────────────────────────────────────────────── */}
       <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 sm:p-5">
 
-        {/* Search */}
+        {/* Search — always visible on all screen sizes */}
         <div className="relative">
-          <Search
-            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-            aria-hidden="true"
-          />
+          <svg className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input
             type="search"
             placeholder="Search by title, lead, or description…"
@@ -167,136 +186,133 @@ export function TasksView() {
           />
         </div>
 
-        {/* Filter chips — all click-based, mobile-friendly */}
-        <div className="flex flex-wrap items-center gap-2">
+        {/* ── Mobile: single FilterSheet button + sort ──────────────────── */}
+        <div className="flex items-center gap-2 md:hidden">
+          <FilterSheet activeCount={activeFilterCount} onClear={clearAllFilters}>
 
-          {/* Status */}
+            <FilterSheet.Section title="Status">
+              {STATUS_OPTIONS.map((opt) => (
+                <FilterSheet.Option key={opt.value} label={opt.label}
+                  checked={selectedStatuses.includes(opt.value)}
+                  onChange={() => toggleStatus(opt.value)} />
+              ))}
+            </FilterSheet.Section>
+
+            <FilterSheet.Section title="Priority">
+              {PRIORITY_OPTIONS.map((opt) => (
+                <FilterSheet.Option key={opt.value} label={opt.label}
+                  checked={selectedPriorities.includes(opt.value)}
+                  onChange={() => togglePriority(opt.value)} />
+              ))}
+            </FilterSheet.Section>
+
+            <FilterSheet.Section title="Type">
+              {TYPE_OPTIONS.map((opt) => (
+                <FilterSheet.Option key={opt.value} label={opt.label}
+                  checked={selectedTypes.includes(opt.value)}
+                  onChange={() => toggleType(opt.value)} />
+              ))}
+            </FilterSheet.Section>
+
+            {can('tasks.view_all') && (
+              <FilterSheet.Section title="Assignee">
+                {TEAM_MEMBERS.filter((m) => m.role !== 'student').map((m) => (
+                  <FilterSheet.Option key={m.id} label={m.name}
+                    checked={selectedAssignee === m.id}
+                    onChange={() => toggleAssignee(m.id)} />
+                ))}
+              </FilterSheet.Section>
+            )}
+
+          </FilterSheet>
+
+          <SortDropdown value={sortBy} options={SORT_OPTIONS}
+            onChange={setSortBy} className="ml-auto" />
+        </div>
+
+        {/* ── Desktop: inline filter row (unchanged) ────────────────────── */}
+        <div className="hidden flex-wrap items-center gap-2 md:flex">
+
           <FilterDropdown label="Status" count={selectedStatuses.length}>
             {STATUS_OPTIONS.map((opt) => (
-              <FilterOption
-                key={opt.value}
-                label={opt.label}
+              <FilterOption key={opt.value} label={opt.label}
                 checked={selectedStatuses.includes(opt.value)}
-                onChange={() => toggleStatus(opt.value)}
-              />
+                onChange={() => toggleStatus(opt.value)} />
             ))}
           </FilterDropdown>
 
-          {/* Priority */}
           <FilterDropdown label="Priority" count={selectedPriorities.length}>
             {PRIORITY_OPTIONS.map((opt) => (
-              <FilterOption
-                key={opt.value}
-                label={opt.label}
+              <FilterOption key={opt.value} label={opt.label}
                 checked={selectedPriorities.includes(opt.value)}
-                onChange={() => togglePriority(opt.value)}
-              />
+                onChange={() => togglePriority(opt.value)} />
             ))}
           </FilterDropdown>
 
-          {/* Type */}
           <FilterDropdown label="Type" count={selectedTypes.length}>
             {TYPE_OPTIONS.map((opt) => (
-              <FilterOption
-                key={opt.value}
-                label={opt.label}
+              <FilterOption key={opt.value} label={opt.label}
                 checked={selectedTypes.includes(opt.value)}
-                onChange={() => toggleType(opt.value)}
-              />
+                onChange={() => toggleType(opt.value)} />
             ))}
           </FilterDropdown>
 
-          {/* Assignee (admin+ only) */}
           {can('tasks.view_all') && (
             <FilterDropdown label="Assignee" count={selectedAssignee ? 1 : 0}>
-              <FilterOption
-                label="All"
-                checked={selectedAssignee === null}
-                onChange={() => setSelectedAssignee(null)}
-              />
+              <FilterOption label="All" checked={selectedAssignee === null}
+                onChange={() => setSelectedAssignee(null)} />
               {TEAM_MEMBERS.filter((m) => m.role !== 'student').map((m) => (
-                <FilterOption
-                  key={m.id}
-                  label={m.name}
+                <FilterOption key={m.id} label={m.name}
                   checked={selectedAssignee === m.id}
-                  onChange={() => toggleAssignee(m.id)}
-                />
+                  onChange={() => toggleAssignee(m.id)} />
               ))}
             </FilterDropdown>
           )}
 
-          {/* Sort — right-aligned */}
-          <SortDropdown
-            value={sortBy}
-            options={SORT_OPTIONS}
-            onChange={setSortBy}
-            className="ml-auto"
-          />
+          <SortDropdown value={sortBy} options={SORT_OPTIONS}
+            onChange={setSortBy} className="ml-auto" />
         </div>
 
-        {/* Active filter chips */}
-        {(selectedStatuses.length > 0 || selectedPriorities.length > 0 || selectedTypes.length > 0 || selectedAssignee) && (
+        {/* Active filter chips — proper labels, not raw enum values */}
+        {hasActiveFilters && (
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs text-muted-foreground">Active:</span>
             {selectedStatuses.map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => toggleStatus(s)}
-                className="flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20"
-              >
-                {s} ×
+              <button key={s} type="button" onClick={() => toggleStatus(s)}
+                className="flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20">
+                {STATUS_LABEL[s]} ×
               </button>
             ))}
             {selectedPriorities.map((p) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => togglePriority(p)}
-                className="flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20"
-              >
-                {p} ×
+              <button key={p} type="button" onClick={() => togglePriority(p)}
+                className="flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20">
+                {PRIORITY_LABEL[p]} ×
               </button>
             ))}
             {selectedTypes.map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => toggleType(t)}
-                className="flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20"
-              >
-                {t} ×
+              <button key={t} type="button" onClick={() => toggleType(t)}
+                className="flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20">
+                {TYPE_LABEL[t]} ×
               </button>
             ))}
             {selectedAssignee && (
-              <button
-                type="button"
-                onClick={() => setSelectedAssignee(null)}
-                className="flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20"
-              >
-                {TEAM_MEMBERS.find((m) => m.id === selectedAssignee)?.name ?? selectedAssignee} ×
+              <button type="button" onClick={() => setSelectedAssignee(null)}
+                className="flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20">
+                {TEAM_MEMBERS.find((m) => m.id === selectedAssignee)?.name} ×
               </button>
             )}
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedStatuses([]);
-                setSelectedPriorities([]);
-                setSelectedTypes([]);
-                setSelectedAssignee(null);
-              }}
-              className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
-            >
+            <button type="button" onClick={clearAllFilters}
+              className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground">
               Clear all
             </button>
           </div>
         )}
       </div>
 
-      {/* ── Tasks table ──────────────────────────────────────────────────── */}
-      <div className="overflow-hidden rounded-xl border border-border">
+      {/* ── Task list ─────────────────────────────────────────────────────── */}
+      <div className="overflow-hidden rounded-xl border border-border bg-card">
         {filteredTasks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-3 bg-card py-16 text-center">
+          <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
             <p className="text-base font-medium text-foreground">No tasks found</p>
             <p className="text-sm text-muted-foreground">
               {can('tasks.create')
@@ -305,39 +321,53 @@ export function TasksView() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto bg-card">
-            <table className="w-full text-sm">
-              <thead className="border-b border-border bg-muted/50">
-                <tr>
-                  <th className="px-4 py-3 text-left font-semibold text-foreground sm:px-5">
-                    Task / Lead
-                  </th>
-                  <th className="hidden px-4 py-3 text-left font-semibold text-foreground sm:table-cell sm:px-5">
-                    Assigned To
-                  </th>
-                  <th className="hidden px-4 py-3 text-left font-semibold text-foreground lg:table-cell lg:px-5">
-                    Due
-                  </th>
-                  <th className="px-4 py-3 text-left font-semibold text-foreground sm:px-5">
-                    Status
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {filteredTasks.map((task) => (
-                  <TaskTableRow
-                    key={task.id}
-                    task={task}
-                    onClick={() => setSelectedTask(task)}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <>
+            {/* Mobile: card list (< md) */}
+            <div className="divide-y divide-border md:hidden">
+              {filteredTasks.map((task) => (
+                <TaskCard
+                  key={task.id}
+                  task={task}
+                  onClick={() => setSelectedTask(task)}
+                />
+              ))}
+            </div>
+
+            {/* Desktop: table (≥ md) */}
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full text-sm">
+                <thead className="border-b border-border bg-muted/50">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-semibold text-foreground sm:px-5">
+                      Task / Lead
+                    </th>
+                    <th className="hidden px-4 py-3 text-left font-semibold text-foreground sm:table-cell sm:px-5">
+                      Assigned To
+                    </th>
+                    <th className="hidden px-4 py-3 text-left font-semibold text-foreground lg:table-cell lg:px-5">
+                      Due
+                    </th>
+                    <th className="px-4 py-3 text-left font-semibold text-foreground sm:px-5">
+                      Status
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {filteredTasks.map((task) => (
+                    <TaskTableRow
+                      key={task.id}
+                      task={task}
+                      onClick={() => setSelectedTask(task)}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
 
-      {/* ── Task Drawer ───────────────────────────────────────────────────── */}
+      {/* ── Drawer / Modal ───────────────────────────────────────────────── */}
       {selectedTask && (
         <TaskDrawer
           task={selectedTask}
@@ -346,7 +376,6 @@ export function TasksView() {
         />
       )}
 
-      {/* ── Create Task Modal ─────────────────────────────────────────────── */}
       <CreateTaskModal
         open={showCreateModal}
         onClose={() => setShowCreateModal(false)}
