@@ -53,7 +53,7 @@ const PRIORITY_ORDER: Record<TaskPriority, number> = {
 // ─── Label lookups for active chips ───────────────────────────────────────────
 
 const STATUS_LABEL: Record<TaskStatus, string> = {
-  pending: 'Pending', overdue: 'Overdue', completed: 'Completed',
+  pending: 'Pending', overdue: 'Overdue', completed: 'Completed', in_progress: 'In Progress', cancelled: 'Cancelled', 
 };
 const PRIORITY_LABEL: Record<TaskPriority, string> = {
   urgent: 'Urgent', high: 'High', medium: 'Medium', low: 'Low',
